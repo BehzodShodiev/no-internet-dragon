@@ -1,0 +1,11 @@
+import fs from 'node:fs';
+const s = fs.readFileSync(process.argv[2], 'utf8');
+const si = s.indexOf('<script type="module"');
+const shell = s.slice(0, si).replace(/<style[\s\S]*?<\/style>/, '<style/>');
+console.log('document wrapper tags:', (s.slice(0, si).match(/<(!doctype|html|head|body)\b/gi) || []).length);
+console.log('shell markup (no CSS/JS):', shell.length, 'chars');
+const hosts = {};
+for (const m of s.matchAll(/https?:\/\/([a-z0-9.-]+)/gi)) hosts[m[1]] = (hosts[m[1]] || 0) + 1;
+console.log('hosts mentioned anywhere:', JSON.stringify(hosts));
+const count = (re) => (s.match(re) || []).length;
+console.log({ fetch: count(/\bfetch\(/g), xhr: count(/XMLHttpRequest/g), ws: count(/new WebSocket/g), swRegister: count(/serviceWorker\.register/g), importScripts: count(/importScripts/g), srcHttp: count(/src=["']https?:/g), cssUrlHttp: count(/url\(["']?https?:/g) });

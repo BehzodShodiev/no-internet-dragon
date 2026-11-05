@@ -1,0 +1,21 @@
+{
+  "name": "no-internet-dragon",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A realistic 2D/3D take on Chrome's offline dino runner, starring a Godzilla-style dragon.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:single": "vite build --mode single",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "5.4.11",
+    "vite-plugin-singlefile": "2.0.3"
+  },
+  "dependencies": {
+    "@fontsource/press-start-2p": "5.3.0",
+    "three": "0.170.0"
+  }
+}

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0b0c0e" />
+    <meta name="description" content="A realistic 2D/3D take on Chrome's offline dino game, starring a Godzilla-style dragon." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>No Internet Dragon</title>
+  </head>
+  <body>
+    <canvas id="scene" aria-label="Game view"></canvas>
+
+    <div id="hud">
+      <div class="topbar">
+        <div class="controls">
+          <button id="btn-view" class="btn seg" data-mode="3d" title="Switch 2D / 3D view (V)" aria-label="Switch 2D / 3D view">
+            <span data-v="2d">2D</span><span data-v="3d">3D</span>
+          </button>
+          <button id="btn-sound" class="btn icon" title="Sound (M)" aria-label="Toggle sound">
+            <svg class="on" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+            <svg class="off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
+          <button id="btn-quality" class="btn text" title="Graphics quality (Q)" aria-label="Graphics quality">AUTO</button>
+          <button id="btn-pause" class="btn icon" title="Pause (P)" aria-label="Pause">
+            <svg class="p" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
+            <svg class="r" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+          </button>
+          <button id="btn-fullscreen" class="btn icon" title="Fullscreen" aria-label="Fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+          </button>
+          <button id="btn-board" class="btn icon hidden" title="Leaderboard (L)" aria-label="Leaderboard">
+            <svg viewBox="0 0 24 24"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V17h3v4H8v-4h3v-2.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3V3zm-1 4v1a2 2 0 0 0 1.4 1.9A9 9 0 0 1 7 7H6zm11 0a9 9 0 0 1-.4 2.9A2 2 0 0 0 18 8V7h-1z" /></svg>
+          </button>
+        </div>
+        <div class="scoreboard">
+          <div class="score"><span id="hi">HI 00000</span><span id="score">00000</span></div>
+          <div id="combo" class="combo" aria-label="Combo multiplier">
+            <span class="gem" aria-hidden="true"></span>
+            <span class="chain"><span id="chain-fill"></span></span>
+            <span id="mult">×1</span>
+          </div>
+          <div id="charge" class="meter">
+            <div class="label">ATOMIC BREATH <kbd>F</kbd></div>
+            <div class="bar"><div id="charge-fill"></div></div>
+          </div>
+          <div id="rage" class="meter">
+            <div class="label">KAIJU RAGE <span class="sub">FROM CRYSTALS</span></div>
+            <div class="bar"><div id="rage-fill"></div></div>
+          </div>
+          <div id="rival" class="rival hidden" aria-live="polite">
+            <img alt="" />
+            <div class="who"><span class="lbl">NEXT TO BEAT</span><span class="nm"></span></div>
+            <b class="pts"></b>
+          </div>
+        </div>
+      </div>
+
+      <div id="boss-bar" class="hidden" aria-label="Boss health">
+        <div class="boss-name" id="boss-name">GUNSHIP</div>
+        <div class="boss-hp" id="boss-hp"></div>
+      </div>
+      <div id="banner" class="banner" aria-live="polite"><small id="banner-sub"></small><b id="banner-title"></b></div>
+      <div id="popups"></div>
+      <div id="warnings"></div>
+
+      <div id="touch-controls">
+        <button class="tbtn duck" data-act="duck" aria-label="Duck">
+          <svg viewBox="0 0 24 24"><path d="M12 19l-7-7h4V5h6v7h4z" /></svg>
+        </button>
+        <div class="right">
+          <button class="tbtn smash" data-act="smash" aria-label="Smash">
+            <svg viewBox="0 0 24 24"><path d="M4 14c2-6 7-10 15-10-3 2-5 4-6 6 3-1 6-1 8 0-4 1-7 3-8 6 2 0 4 1 5 3-5-1-9 0-12 3 0-3 0-5-2-8z" /></svg>
+          </button>
+          <button class="tbtn fire" data-act="breath" aria-label="Atomic breath">
+            <svg viewBox="0 0 24 24"><path d="M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 3-6 0 2 1 3 2 3 0-3-1-6 1-9z" /></svg>
+          </button>
+          <button class="tbtn jump" data-act="jump" aria-label="Jump">
+            <svg viewBox="0 0 24 24"><path d="M12 5l7 7h-4v7H9v-7H5z" /></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <section id="title-screen" class="hidden">
+      <div class="card">
+        <div class="dino" id="dino-icon" aria-hidden="true"></div>
+        <h1>No internet</h1>
+        <p class="try">Try:</p>
+        <ul>
+          <li>Checking the network cables, modem, and router</li>
+          <li>Reconnecting to Wi-Fi</li>
+          <li>Outrunning the desert on the back of a dragon</li>
+        </ul>
+        <p class="err">ERR_INTERNET_DISCONNECTED</p>
+        <div class="levels" id="levels" role="radiogroup" aria-label="Level"></div>
+        <p class="lvl-blurb" id="lvl-blurb"></p>
+        <div class="skins-row">
+          <div class="monster-line">
+            <button id="btn-monsters" class="monster-btn" type="button" title="Monsters (B)">
+              <span class="lbl">MONSTER</span><b id="monster-name">Kaiju</b><span class="chev" aria-hidden="true">›</span>
+            </button>
+            <div class="skins" id="skins" role="radiogroup" aria-label="Skin"></div>
+          </div>
+          <p class="skin-info" id="skin-info"></p>
+        </div>
+        <button id="btn-start" class="primary">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+          Run
+          <kbd>Space</kbd>
+        </button>
+        <p class="tips"><span class="gem" aria-hidden="true"></span><span><b>Smash</b> through cacti, tanks and whole buildings. Jump what's too solid, and bat missiles back at the gunship. Grab crystals for a ×5 combo and <b>Kaiju Rage</b>.</span></p>
+        <dl class="keys">
+          <div><dt><kbd>Space</kbd> <kbd>↑</kbd></dt><dd>Jump (hold for higher)</dd></div>
+          <div><dt><kbd>→</kbd> <kbd>D</kbd></dt><dd>Smash</dd></div>
+          <div><dt><kbd>↓</kbd></dt><dd>Duck / fast fall</dd></div>
+          <div><dt><kbd>F</kbd></dt><dd>Atomic breath when charged</dd></div>
+          <div><dt><kbd>V</kbd></dt><dd>Switch 2D / 3D view</dd></div>
+          <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>K</kbd></dt><dd>Level · skin</dd></div>
+        </dl>
+        <p class="online" id="online-status"></p>
+      </div>
+      <aside id="board-title" class="board-card hidden" aria-label="Company leaderboard">
+        <h2>Company leaderboard · <span class="lvl-name">Desert</span></h2>
+        <ol class="board-list"></ol>
+        <p class="board-status"></p>
+        <button class="link" id="btn-board-more">Full board <kbd>L</kbd></button>
+      </aside>
+    </section>
+
+    <section id="gameover" class="hidden">
+      <div class="over-title">G A M E&nbsp;&nbsp;O V E R</div>
+      <button id="btn-restart" class="restart" aria-label="Run again">
+        <svg viewBox="0 0 48 48"><path d="M24 8a16 16 0 1 0 15.5 20h-4.2A12 12 0 1 1 24 12c3.3 0 6.3 1.4 8.5 3.5L26 22h14V8l-4.7 4.7A15.9 15.9 0 0 0 24 8z" /></svg>
+      </button>
+      <div class="over-levels" id="over-levels" role="group" aria-label="Run a level"></div>
+      <div class="over-monster">
+        <button id="btn-monsters-over" class="monster-btn" type="button" title="Monsters (B)">
+          <span class="lbl">MONSTER</span><b id="monster-name-over">Kaiju</b><span class="chev" aria-hidden="true">›</span>
+        </button>
+        <div class="skins over-skins" id="over-skins" role="radiogroup" aria-label="Skin"></div>
+      </div>
+      <div class="stats">
+        <div><span>SCORE</span><b id="final-score">00000</b></div>
+        <div><span>BEST</span><b id="final-best">00000</b></div>
+      </div>
+      <div id="new-best" class="hidden">NEW HIGH SCORE</div>
+      <p id="over-stats" class="over-stats"></p>
+      <div id="over-board" class="over-board hidden">
+        <div id="over-rank" class="over-rank"></div>
+        <ol class="board-list"></ol>
+        <p class="board-status"></p>
+      </div>
+      <p class="hint">Press <kbd>Space</kbd> or tap to run again · <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> to switch level · <kbd>Esc</kbd> menu</p>
+    </section>
+
+    <section id="monsters" class="hidden" aria-label="Monsters">
+      <div class="board-panel monsters-panel">
+        <header>
+          <h2>Monsters</h2>
+          <button id="btn-monsters-close" class="btn icon" aria-label="Close monsters">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <p class="mon-intro">Earn new monsters by playing. Goals count across all your runs, on any level.</p>
+        <div class="mon-grid" id="mon-grid"></div>
+      </div>
+    </section>
+
+    <section id="board" class="hidden" aria-label="Company leaderboard">
+      <div class="board-panel">
+        <header>
+          <h2>Company leaderboard</h2>
+          <div class="board-tabs" id="board-tabs" role="tablist" aria-label="Level"></div>
+          <button id="btn-board-close" class="btn icon" aria-label="Close leaderboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <p class="board-status"></p>
+        <ol class="board-list"></ol>
+      </div>
+    </section>
+
+    <section id="pause" class="hidden">
+      <div class="over-title">PAUSED</div>
+      <button id="btn-resume" class="primary">
+        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+        Resume
+      </button>
+    </section>
+
+    <div id="loading">
+      <div class="logo">NO INTERNET<br /><span>DRAGON</span></div>
+      <div class="track"><div id="load-bar"></div></div>
+      <div id="load-text">Loading…</div>
+    </div>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

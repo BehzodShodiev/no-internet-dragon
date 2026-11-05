@@ -1,0 +1,11 @@
+{
+  "name": "No Internet Dragon",
+  "short_name": "Dragon",
+  "description": "A realistic 2D/3D take on Chrome's offline dino game, starring a Godzilla-style dragon.",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0b0c0e",
+  "theme_color": "#0b0c0e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
