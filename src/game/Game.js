@@ -21,6 +21,7 @@ import { City } from '../world/City.js';
 import { Volcano } from '../world/Volcano.js';
 import { Debris } from '../world/Debris.js';
 import { Blasts } from '../world/Blasts.js';
+import { SupplyDrops, POWERUPS } from './SupplyDrops.js';
 import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
@@ -229,6 +230,8 @@ export class Game {
       this.boss.reset();
       this.debris.clear();
       this.blasts?.clear();
+      this.supply?.reset(this.seed);
+      this.magnetT = 0;
       this._setupWorld();
       this.dragon.setRage(0);
       this.hud.setBoss('', -1, 0);
@@ -361,6 +364,8 @@ export class Game {
       this.crystals.clear();
       this.debris.clear();
       this.blasts?.clear();
+      this.supply?.clear();
+      this.magnetT = 0;
       this._setupWorld(instant);
     }
     this._onBoard();
@@ -428,6 +433,8 @@ export class Game {
     this.obstacles.onMeteor = (o) => this._meteorImpact(o);
     this.debris = new Debris(scene, tex);
     this.blasts = new Blasts(scene, this.tex.noise);
+    this.supply = new SupplyDrops(scene);
+    this.magnetT = 0;
     // volcano plumes and eruptions are drawn by Blasts (one instanced draw)
     this.volcano.onPuff = (x, y, z, r, life, rise, heat) => this.blasts.puff(x, y, z, r, life, rise, heat);
     this.volcano.onErupt = (x, y, z, s) => this._erupt(x, y, z, s);
@@ -1168,6 +1175,26 @@ export class Game {
     }
   }
 
+  /** A supply crate opens: a burst in its colour, the power-up's name, and its effect. */
+  _takeDrop(d) {
+    const P = POWERUPS[d.kind];
+    const c = this._dropC || (this._dropC = new THREE.Color());
+    c.set(P.color);
+    for (let i = 0; i < 44; i++) {
+      const a = Math.random() * Math.PI * 2, v = 3 + Math.random() * 7;
+      this.sparks.emit(d.x, d.y + 0.7, 0, Math.cos(a) * v, 2 + Math.random() * 7, Math.sin(a) * v * 0.6,
+        0.5 + Math.random() * 0.5, 0.4, 0.05, c.r * 2.2, c.g * 2.2, c.b * 2.2, 1, 1.2, 6, 1);
+    }
+    this._popup(P.label, d.x, d.y + 2.8, 'close');
+    this.hud.toast(`${P.label}: ${P.sub}`, 2400);
+    this.audio.charged();
+    this._haptic?.(25);
+    if (d.kind === 'magnet') this.magnetT = 10;
+    else if (d.kind === 'core') this.charge = 1;
+    else this._addRage(0.5);
+    this.supply.clear();
+  }
+
   /** A volcano on the horizon erupts: lava bombs arc out of the crater, a boom rolls in, the ground shakes. */
   _erupt(x, y, z, s) {
     for (let i = 0; i < 46; i++) {
@@ -1862,6 +1889,19 @@ export class Game {
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
     this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);
+    // supply drops: run through a crate, smash it or burn it to open it
+    this.supply.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.state === 'running', this.obstacles.active, this.time);
+    const drop = this.supply.drop;
+    if (drop && this.state === 'running') {
+      const touch = drop.x > -1.6 && drop.x < 2.6 && this.y < drop.y + 1.0;
+      const smashed = this.smashT > 0 && drop.x > -0.5 && drop.x < 4.5 && drop.y < 3.5;
+      const burned = this.breathT > 0 && drop.x > 1 && drop.x < CFG.breathRange && drop.y < 6;
+      if (touch || smashed || burned) this._takeDrop(drop);
+    }
+    if (this.magnetT > 0) {
+      this.magnetT -= dt;
+      for (const c of this.crystals.items) c.mag = 1; // every crystal ahead homes in
+    }
     if (this.blastLightT > 0) {
       this.blastLightT -= dt;
       this.blastLight.position.x -= this.speed * dt;
