@@ -14,6 +14,11 @@ export class Leaderboard {
     this.me = null;
     this.mine = Object.fromEntries(BOARD_FIELDS.map((f) => [f, 0])); // your bests, per field
     this.mineExists = false;
+    // Whether your own row exists, as far as a SUCCESSFUL read says: 'exists' | 'missing' | 'unknown'.
+    // Only 'missing' may create the row with set(); anything else writes with update(), which can't
+    // wipe the fields it doesn't name (other levels' bests, progress).
+    this.mineState = 'unknown';
+    this.mineRead = false; // a read of your row succeeded (its progress has been seen and merged)
     this.readOnly = false;
     this.saveError = null; // why the last run couldn't be posted: 'readonly' | 'network' | null
     this.onChange = null;
@@ -73,16 +78,44 @@ export class Leaderboard {
       );
     }
     // your own row (it may sit below the top 50 on some boards)
-    if (this.me) {
-      this._mineLoaded = db.doc(`scores/${this.me}`).get().then((s) => {
-        this.mineExists = s.exists;
-        if (s.exists) {
-          for (const f of BOARD_FIELDS) this.mine[f] = Math.max(this.mine[f], Number(s.data()[f]) || 0);
-          this.remoteProgress = s.data().progress || null; // unlocks and lifetime stats from other devices
-        }
-        this._emit();
-      }).catch(() => {});
+    if (this.me) this._mineLoaded = this._loadMine();
+  }
+
+  /** Reads your own row. Only a successful read decides whether it exists; a failed read leaves 'unknown'. */
+  async _loadMine() {
+    try {
+      const s = await this.db.doc(`scores/${this.me}`).get();
+      this.mineState = s.exists ? 'exists' : 'missing';
+      this.mineRead = true;
+      this.mineExists = s.exists;
+      if (s.exists) {
+        const d = s.data() || {};
+        for (const f of BOARD_FIELDS) this.mine[f] = Math.max(this.mine[f], Number(d[f]) || 0);
+        if (d.progress) this.remoteProgress = d.progress; // unlocks and lifetime stats from other devices
+      }
+      this._emit();
+    } catch { /* stays 'unknown': every write re-reads before touching the row */ }
+  }
+
+  /**
+   * Writes fields into your row without ever replacing it. A row is only created (set) when a successful
+   * read showed there is none; otherwise update() changes just the named fields. After a failed read the
+   * row is re-read first, and if it is still unknown, update() is used (it fails harmlessly if the row is
+   * missing, and the next write tries again). requireKnown: skip the write unless a read succeeded (used
+   * for progress, which must be merged with what other devices wrote before it's replaced).
+   */
+  async _write(fields, requireKnown = false) {
+    await this._mineLoaded;
+    for (let i = 0; i < 2 && (this.mineState === 'unknown' || (requireKnown && !this.mineRead)); i++) {
+      await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+      await this._loadMine();
     }
+    if (requireKnown && !this.mineRead) return;
+    const ref = this.db.doc(`scores/${this.me}`);
+    if (this.mineState === 'missing') await ref.set({ ...this.mine, ...fields });
+    else await ref.update(fields);
+    this.mineState = 'exists';
+    this.mineExists = true;
   }
 
   async _resolveAndEmit() {
@@ -138,15 +171,7 @@ export class Leaderboard {
   syncProgress(progress) {
     if (!this.db || this.readOnly || !this.me) return;
     const write = async () => {
-      await this._mineLoaded;
-      const ref = this.db.doc(`scores/${this.me}`);
-      try {
-        if (this.mineExists) await ref.update({ progress });
-        else {
-          await ref.set({ ...this.mine, progress });
-          this.mineExists = true;
-        }
-      } catch { /* the local copy still has it */ }
+      try { await this._write({ progress }, true); } catch { /* the local copy still has it */ }
     };
     this._writing = this._writing.then(write).catch(() => {});
   }
@@ -164,24 +189,18 @@ export class Leaderboard {
     this.mine[field] = score;
     this._emit();
     const write = async () => {
-      await this._mineLoaded; // never overwrite the other levels' bests with stale zeros
-      const ref = this.db.doc(`scores/${this.me}`);
       const fields = { [field]: this.mine[field], at: Date.now(), view: meta.view, stage: meta.stage };
-      const put = async () => {
-        if (this.mineExists) await ref.update(fields);
-        else await ref.set({ ...this.mine, ...fields });
-        this.mineExists = true;
-      };
       try {
-        await put();
+        await this._write(fields);
         return true;
       } catch (e) {
         if (e?.code === 'unavailable') {
           await new Promise((r) => setTimeout(r, 600 + Math.random() * 900));
-          try { await put(); return true; } catch { /* give up */ }
+          try { await this._write(fields); return true; } catch { /* give up */ }
         }
-        // a write below the access rules rejects invalid_argument: this viewer has view-only access
-        if (e?.code === 'invalid_argument' || e?.code === 'not_granted') this.readOnly = true;
+        // A write below the access rules rejects invalid_argument: this viewer has view-only access.
+        // Only trusted once the row's state is known (an update() of a missing row also rejects).
+        if ((e?.code === 'invalid_argument' || e?.code === 'not_granted') && this.mineState !== 'unknown') this.readOnly = true;
         this.saveError = this.readOnly ? 'readonly' : 'network';
         this._emit();
         return false;

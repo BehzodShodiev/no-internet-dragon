@@ -10,8 +10,12 @@ export class Input {
 
     const JUMP = ['Space', 'ArrowUp', 'KeyW'];
     const DUCK = ['ArrowDown', 'KeyS'];
+    // Game sets this: whether menus are up (keyboard users may then press focused buttons)
+    this.allowUi = () => true;
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      // Space / Enter on a keyboard-focused button press that button (menus only; in a run they're game keys)
+      if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') && this._uiFocus(e.target)) return;
       if (JUMP.includes(e.code)) {
         e.preventDefault();
         this.jump = true;
@@ -71,10 +75,18 @@ export class Input {
     target.addEventListener('pointercancel', end);
   }
 
+  _uiFocus(t) {
+    if (!(t instanceof HTMLElement) || !this.allowUi()) return false;
+    if (!t.closest('button, [role="button"], [role="radio"], [role="tab"], a[href], select, textarea')) return false;
+    return t.matches(':focus-visible') && t.offsetParent !== null;
+  }
+
   bindButton(el, action) {
     const down = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      // keep the press even if the thumb slides off the button (a held jump glides, a held duck ducks)
+      try { el.setPointerCapture(e.pointerId); } catch { /* not capturable */ }
       el.classList.add('pressed');
       if (action === 'jump') { this._buttons.jump = true; this.jump = true; this.emit('jump'); }
       else if (action === 'duck') { this._buttons.duck = true; this.duck = true; this.emit('duck'); }
@@ -82,14 +94,15 @@ export class Input {
     };
     const up = (e) => {
       e.preventDefault();
+      if (!el.classList.contains('pressed')) return;
       el.classList.remove('pressed');
       if (action === 'jump') { this._buttons.jump = false; this.jump = false; this.emit('jumpRelease'); }
       if (action === 'duck') { this._buttons.duck = false; this.duck = false; }
     };
     el.addEventListener('pointerdown', down);
     el.addEventListener('pointerup', up);
-    el.addEventListener('pointerleave', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
   }
 
   on(evt, fn) {

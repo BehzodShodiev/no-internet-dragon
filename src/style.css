@@ -57,6 +57,8 @@ kbd {
 }
 
 /* ---------------------------------------------------------------- HUD */
+/* menus (title, game over): only the top-left controls stay; the run's scoreboard and buttons hide */
+#hud.menu .scoreboard, #hud.menu #touch-controls, #hud.menu #btn-pause, #hud.menu #boss-bar, #hud.menu #warnings { display: none !important; }
 #hud {
   position: fixed;
   inset: 0;
@@ -781,6 +783,8 @@ kbd {
   animation: blink 0.8s steps(2) infinite;
 }
 .hint { margin: 0; font-size: 13px; color: rgba(255, 255, 255, 0.8); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+.over-menu { pointer-events: auto; padding: 9px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--glass-strong); color: var(--ink); font: 600 13px/1 var(--ui); cursor: pointer; }
+.over-menu:hover { border-color: rgba(255, 255, 255, 0.35); }
 @keyframes blink { 50% { opacity: 0.35; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 

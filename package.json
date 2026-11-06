@@ -8,7 +8,14 @@
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --mode single",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "artifact": "vite build --mode single && node tools/make-artifact.mjs dist-single/index.html dist-single/artifact.html && node tools/scan-artifact.mjs dist-single/artifact.html",
+    "test:data": "node tools/datatest.mjs",
+    "test:hitbox": "node tools/hitcheck.mjs",
+    "test:matrix": "node tools/botmatrix.mjs",
+    "test:quick": "node tools/botmatrix.mjs --quick",
+    "test:perf": "node tools/perf.mjs",
+    "test": "node tools/datatest.mjs && node tools/hitcheck.mjs && node tools/botmatrix.mjs"
   },
   "devDependencies": {
     "vite": "5.4.11",

@@ -15,6 +15,7 @@ import { Boss } from '../entities/Boss.js';
 import { SKINS } from '../entities/Skins.js';
 import { MONSTERS } from '../entities/Monsters.js';
 import { Progress } from './Progress.js';
+import { PerfMonitor } from './PerfMonitor.js';
 import { Terrain } from '../world/Terrain.js';
 import { City } from '../world/City.js';
 import { Volcano } from '../world/Volcano.js';
@@ -23,6 +24,7 @@ import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
 import * as TX from '../gfx/textures.js';
+import { mulberry32, hash32 } from '../gfx/noise.js';
 
 export const CFG = {
   startSpeed: 11,
@@ -93,6 +95,9 @@ export class Game {
     this.stages.setLevel(this.level);
     // local bests per level (the Desert keeps the pre-levels key)
     this.progress = new Progress();
+    // a goal reached in a run that ended without a death (tab closed) unlocks now, before the saved pick is restored
+    this.lateUnlocks = this.progress.check(MONSTERS);
+    if (this.lateUnlocks.length) this.progress.save();
     const savedMonster = MONSTERS.find((m) => m.id === store.get('dragon.monster', 'kaiju'));
     this.monster = savedMonster && this.progress.isUnlocked(savedMonster) ? savedMonster : MONSTERS[0];
     this.preview = false; // the owner trying a locked monster
@@ -125,7 +130,15 @@ export class Game {
       quality: store.get('dragon.quality', 'auto'),
     };
     this.boxes = Array.from({ length: 8 }, () => new Float32Array(4));
-    this.debug = new URLSearchParams(location.search).has('debug');
+    const params = new URLSearchParams(location.search);
+    this.debug = params.has('debug');
+    // ?sim=N: fixed-step fast simulation for automated tests (N steps of 1/60 s per frame; never posts or saves)
+    this.sim = Math.min(32, Math.max(0, Math.floor(Number(params.get('sim')) || 0)));
+    // ?seed=N replays runs: run k of this page uses seed N + k (a random base otherwise)
+    this.seedFixed = params.has('seed');
+    this.seedBase = this.seedFixed ? Number(params.get('seed')) >>> 0 : (Math.random() * 4294967296) >>> 0;
+    this.runCount = 0;
+    this.seed = this.seedBase;
     this._dustDay = new THREE.Color();
     this._dir = new THREE.Vector3();
     this._v = new THREE.Vector3();
@@ -133,12 +146,14 @@ export class Game {
     this._bossBox = new Float32Array(4);
     this._v3c = new THREE.Color();
     this._sideMouths = [new THREE.Vector3(), new THREE.Vector3()];
-    this.tips = {}; // one-time hints already shown this visit
+    // one-time hints already shown (remembered across visits)
+    try { this.tips = JSON.parse(store.get('dragon.tips', '{}')) || {}; } catch { this.tips = {}; }
     this._resetRun();
   }
 
   /** Per-run state shared by the first start and every restart. */
   _resetRun() {
+    this.seed = (this.seedBase + this.runCount++) >>> 0;
     this.score = 0;
     this.dist = 0;
     this.chain = 0;
@@ -172,7 +187,7 @@ export class Game {
     this.breathT = 0;
     this.stages.reset();
     if (this.obstacles) {
-      this.obstacles.reset();
+      this.obstacles.reset(this.seed);
       this.obstacles.cycle = 0;
       this.crystals.clear();
       this.boss.reset();
@@ -286,9 +301,13 @@ export class Game {
   }
 
   async init() {
-    const step = async (p, text) => { this.hud.loading(p, text); await nextFrame(); };
+    // load-step timestamps (ms since navigation), for tools/perf.mjs and the ?perf overlay
+    this.loadTimes = [];
+    const mark = (text) => this.loadTimes.push({ text, t: Math.round(performance.now()) });
+    const step = async (p, text) => { mark(text); this.hud.loading(p, text); await nextFrame(); };
     await step(0.05, 'Warming up the GPU…');
     this.renderer = new Renderer(this.canvas);
+    if (new URLSearchParams(location.search).has('perf')) this.perf = new PerfMonitor(this.renderer.renderer);
     const scene = (this.scene = new THREE.Scene());
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.3, 6000);
     this.rig = new CameraRig(this.camera);
@@ -376,9 +395,20 @@ export class Game {
     this.hud.setView(this.rig.mode);
     this.hud.setMuted(this.audio.muted);
     window.addEventListener('resize', () => this.renderer.resize());
+    // Lifetime stats count during a run; keep them if the tab is hidden or closed mid-run.
+    const saveProgress = () => { if (!this.sim) this.progress.save(); };
+    window.addEventListener('pagehide', saveProgress);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.state === 'running') this.togglePause(true);
+      if (!document.hidden) return;
+      saveProgress();
+      if (this.state === 'running') this.togglePause(true);
     });
+    // clicking another window mid-run would otherwise mean an unfair death
+    window.addEventListener('blur', () => { if (this.state === 'running' && !this.sim) this.togglePause(true); });
+    if (this.lateUnlocks.length) {
+      const m = this.lateUnlocks[0];
+      setTimeout(() => this.hud.toast(`${m.name} unlocked! Pick it in Monsters.`, 4200), 1200);
+    }
 
     // Opening the audio device can stall the main thread for ~100ms, so do it now (suspended)
     // rather than on the first key press; the first gesture merely resumes it.
@@ -389,7 +419,9 @@ export class Game {
     this.board.connect().catch(() => {});
 
     await step(1, 'Ready');
+    window.__loadTimes = this.loadTimes;
     this.state = 'title';
+    this.hud.setMenu(true);
     this.hud.hideLoading();
     this.hud.show('title', true);
     this.last = performance.now();
@@ -399,14 +431,18 @@ export class Game {
   async _prewarm() {
     // spawn one of everything so every material/program is compiled before play
     const o = this.obstacles;
-    const temp = [
-      o._spawnCactus('cactusS', 1), o._spawnCactus('cactusL', 1), o._spawnRock(), o._spawnPtero(12),
-      o._spawnTank(12, true), o._spawnHeli(12), o.spawnShell(0, 1), o.spawnMissile(0, 1, 1, 10, 0),
-      o._spawnStructure('tower'), o._spawnStructure('fuel'), o._spawnStructure('hedgehog'), o._spawnBuilding(), o._spawnCar(),
-      o._spawnLava(), o._spawnMeteor(), o._spawnPillar(),
-    ];
+    // one sample of every pool type, keyed by type (a new type without a sample is reported)
+    const T = {
+      cactusS: o._spawnCactus('cactusS', 1), cactusL: o._spawnCactus('cactusL', 1), rock: o._spawnRock(), ptero: o._spawnPtero(12),
+      tank: o._spawnTank(12, true), heli: o._spawnHeli(12), shell: o.spawnShell(0, 1), missile: o.spawnMissile(0, 1, 1, 10, 0),
+      tower: o._spawnStructure('tower'), fuel: o._spawnStructure('fuel'), hedgehog: o._spawnStructure('hedgehog'), building: o._spawnBuilding(),
+      car: o._spawnCar(), lava: o._spawnLava(), meteor: o._spawnMeteor(), pillar: o._spawnPillar(),
+    };
+    const unwarmed = Object.keys(o.pools).filter((k) => !T[k]);
+    if (unwarmed.length) console.warn('prewarm: no sample for', unwarmed.join(', '), '(its shaders will compile mid-run)');
+    const temp = Object.values(T);
     temp.forEach((t, i) => t.group.position.set(-2 + i * 2.5, 1, 2));
-    const met = temp[14].model.userData;
+    const met = T.meteor.model.userData;
     met.ball.visible = met.crater.visible = true;
     this.volcano.setActive(true);
     this.dragonLight.intensity = 1;
@@ -417,9 +453,9 @@ export class Game {
     this.city.road.visible = true;
     this.debris.burst(2, 1, 1, 1, 6, 0x888888);
     this.debris.update(0, 0);
-    const heli = temp[5].model.userData;
+    const heli = T.heli.model.userData;
     heli.beam.visible = true;
-    const tank = temp[4].model.userData;
+    const tank = T.tank.model.userData;
     tank.flash.visible = true;
     this.crystals.add(1, 1);
     this.crystals.update(0, 0, this.boxes, 0);
@@ -464,6 +500,7 @@ export class Game {
 
   _bindUI() {
     const inp = this.input;
+    inp.allowUi = () => this.state !== 'running' && this.state !== 'intro' && this.state !== 'dying';
     inp.on('jump', () => this._onJump());
     inp.on('tap', () => this.audio.init());
     inp.on('jumpRelease', () => { if (!this.grounded && this.vy > 0) this.cutPending = true; });
@@ -511,6 +548,7 @@ export class Game {
     });
     click('btn-start', () => this._onJump());
     click('btn-restart', () => this._onJump());
+    click('btn-menu-over', () => this._toTitle());
     click('btn-resume', () => this.togglePause(false));
     click('btn-board', () => this.toggleBoard());
     click('btn-board-more', () => this.toggleBoard(true));
@@ -545,6 +583,7 @@ export class Game {
 
   _startIntro() {
     this.state = 'intro';
+    this.hud.setMenu(false);
     this.introT = 0;
     this.hud.show('title', false);
     this._roar(1.7);
@@ -564,6 +603,7 @@ export class Game {
 
   _restart() {
     this.hud.show('over', false);
+    this.hud.setMenu(false);
     this.dust.clear();
     this.sparks.clear();
     this.footprints.clear();
@@ -596,6 +636,7 @@ export class Game {
     this.timeScale = 1;
     this.lastRun = null;
     this.state = 'title';
+    this.hud.setMenu(true);
     this.hud.show('title', true);
     this._onBoard();
   }
@@ -614,22 +655,24 @@ export class Game {
     if (this.isBest) {
       this.hi = s;
       this.localBests[this.levelIndex] = Math.max(this.localBests[this.levelIndex], s);
-      store.set(this.level.id === 1 ? 'dragon.hi' : `dragon.hi.${this.level.id}`, String(this.localBests[this.levelIndex]));
+      if (!this.sim) store.set(this.level.id === 1 ? 'dragon.hi' : `dragon.hi.${this.level.id}`, String(this.localBests[this.levelIndex]));
       this.hud.setHi(s);
     }
-    const run = (this.lastRun = { score: s, posted: false });
+    const run = (this.lastRun = { score: s, posted: false, seed: this.seed });
     this.progress.add('runs');
     this.progress.max('bestScore', s);
     const unlocked = this.progress.check(MONSTERS);
-    this.progress.save();
-    this.board.syncProgress(this.progress.toJSON());
+    if (!this.sim) {
+      this.progress.save();
+      this.board.syncProgress(this.progress.toJSON());
+    }
     if (unlocked.length) {
       const m = unlocked[0];
       this.hud.banner('NEW MONSTER UNLOCKED', m.name.toUpperCase(), 'clear');
       this.hud.toast(m.name + ' unlocked! Pick it in Monsters (B).', 4200);
       this.audio.charged();
     }
-    if (this.board.enabled) {
+    if (this.board.enabled && !this.sim) {
       this.board.submit(this.level.field, s, { view: this.rig.mode, stage: this.stages.number }).then((ok) => {
         run.posted = ok;
         if (this.board.saveError === 'readonly') this.hud.toast("Score not saved: you have view-only access. Ask the game's owner for Contributor access.", 4500);
@@ -821,6 +864,7 @@ export class Game {
   _tip(key, text) {
     if (this.tips[key]) return;
     this.tips[key] = true;
+    store.set('dragon.tips', JSON.stringify(this.tips));
     this.hud.toast(text, 2800);
   }
 
@@ -1057,7 +1101,8 @@ export class Game {
 
   // ------------------------------------------------------------------ stages and the boss
   _enterStage(st, delay = 0) {
-    this.city.setActive(!!st.city);
+    // the city stays built for the whole Night City level (siege and gunship included)
+    this.city.setActive(this.level.biome === 'city');
     if (st.boss) {
       this.obstacles.spawning = false;
       this.obstacles.pendingShooter = false;
@@ -1083,7 +1128,7 @@ export class Game {
       if (!this.obstacles.active.some((o) => !o.projectile && o.x > -3)) {
         this.bossPending = false;
         // each gunship downed makes the next one tougher; harder levels add one more hit point
-        boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome());
+        boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome(), mulberry32(hash32(this.seed, 1000 + this.bossesSeen)));
         this.bossesSeen++;
       }
     }
@@ -1166,9 +1211,28 @@ export class Game {
     requestAnimationFrame((t) => this._loop(t));
     const realDt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
-    this.renderer.adapt(realDt * 1000, this.settings.quality === 'auto');
-    if (this.state !== 'paused') this._update(realDt);
+    const perf = this.perf;
+    perf?.frameStart(now);
+    const u0 = perf ? performance.now() : 0;
+    if (this.sim) {
+      // fast fixed-step simulation for tests: N steps of 1/60 s, one render (quality stays put)
+      for (let i = 0; i < this.sim && this.state !== 'paused'; i++) {
+        this.stepHook?.(1 / 60);
+        this._update(1 / 60);
+      }
+    } else {
+      this.renderer.adapt(realDt * 1000, this.settings.quality === 'auto');
+      if (this.state !== 'paused') {
+        this.stepHook?.(realDt);
+        this._update(realDt);
+      }
+    }
+    if (perf) {
+      perf.update(performance.now() - u0);
+      perf.renderBegin();
+    }
     this.renderer.render(this.time, this.flash, this.flashColor);
+    perf?.renderEnd();
   }
 
   _update(realDt) {
@@ -1193,8 +1257,10 @@ export class Game {
         this.overT = 0;
         const stats = `${this.level.short} · ${this.smashes} smashed · ${this.crystalsRun} crystals · best ×${this.bestMult}`
           + (this.bossesDowned ? ` · ${this.bossesDowned} gunship${this.bossesDowned > 1 ? 's' : ''} down` : '')
-          + ` · stage ${this.stages.number}`;
+          + ` · stage ${this.stages.number}`
+          + (this.seedFixed || this.debug || this.sim ? ` · seed ${this.seed}` : '');
         this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
+        this.hud.setMenu(true);
         this.hud.resetRival();
         this.hud.setBoss('', -1, 0);
         this.hud.setWarnings([]);

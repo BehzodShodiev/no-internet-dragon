@@ -27,8 +27,13 @@ export class Progress {
     this.stats[stat] = Math.max(this.stats[stat], v);
   }
 
+  /** Saves, first merging what is already stored (another tab may have counted more since). */
   save() {
-    try { localStorage.setItem(KEY, JSON.stringify(this.toJSON())); } catch { /* storage unavailable */ }
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+      if (saved) this.merge(saved);
+      localStorage.setItem(KEY, JSON.stringify(this.toJSON()));
+    } catch { /* storage unavailable or corrupt */ }
   }
 
   toJSON() {

@@ -1,7 +1,7 @@
 // Obstacles: procedural saguaro cacti, boulders and pterodactyls, pooled and spawned Chrome-dino style.
 import * as THREE from 'three';
 import { sweep, blob, mergeLoose } from '../gfx/geometry.js';
-import { mulberry32, createNoise } from '../gfx/noise.js';
+import { mulberry32, createNoise, hash32 } from '../gfx/noise.js';
 import { Military } from './Military.js';
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
@@ -216,6 +216,20 @@ export const SMASH = {
 export const TALL = { tower: true, fuel: true, building: true, pillar: true };
 // Can't be smashed, but nothing to clang off either: the smash just passes over.
 export const SILENT = { lava: true, meteor: true };
+// How each type must be answered. 'height': by the height it flies at (see respond()). The spawner,
+// the tips and the autopilot all read this, so a new type can't be added without saying how to beat it.
+export const RESPONSE = {
+  cactusS: 'jump', cactusL: 'jump', rock: 'jump', hedgehog: 'jump', lava: 'jump', meteor: 'jump', car: 'jump', tank: 'jump',
+  tower: 'smash', fuel: 'smash', building: 'smash', pillar: 'smash',
+  ptero: 'height', heli: 'height', shell: 'height', missile: 'height',
+};
+/** 'jump' | 'duck' | 'under' | 'smash' for one obstacle: low flyers are jumped, mid ones ducked, high ones run under. */
+export function respond(o) {
+  const r = RESPONSE[o.type];
+  if (r !== 'height') return r;
+  const y = o.ty ?? o.y;
+  return y > 2.5 ? 'under' : y > 1.5 ? 'duck' : 'jump';
+}
 // Spawn weights per stage (the desert keeps Chrome's original table in _pickType).
 const TABLES = {
   army: [['tank', 22], ['heli', 20], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4]],
@@ -298,14 +312,33 @@ export class Obstacles {
     this.nextGap = 30;
   }
 
-  reset() {
+  /**
+   * seed: the run's seed. Every spawn draws from its own stream (seed, spawn index), so the sequence of
+   * types and variants is the same for everyone on that seed even when speeds (and so gaps) differ.
+   */
+  reset(seed = this.seed ?? 2024) {
     for (const o of this.active) this._release(o);
     this.active.length = 0;
+    this.seed = seed >>> 0;
+    this.spawnIdx = 0;
+    this.rand = mulberry32(hash32(this.seed, 0x5eed));
+    this.lastType = null;
+    this.repeat = 0;
     this.nextGap = 40;
     this.firstSpawnX = 72;
     this.pendingShooter = false;
     this.spawning = true;
     this.warnings.length = 0;
+  }
+
+  /** How an obstacle must be answered: 'jump' | 'duck' | 'under' | 'smash' (also used by the autopilot). */
+  respond(o) {
+    return respond(o);
+  }
+
+  /** Whether a type is answered by its flight height (flyers and projectiles). */
+  flies(o) {
+    return RESPONSE[o.type] === 'height';
   }
 
   _acquire(type) {
@@ -638,6 +671,8 @@ export class Obstacles {
   }
 
   _spawnNext(speed, dist, hard, freeSpace) {
+    // this spawn's own stream (a held-back shooter retries with the same one)
+    this.rand = mulberry32(hash32(this.seed ?? 2024, this.spawnIdx));
     let type;
     if (this.pendingShooter) type = 'tank';
     else {
@@ -687,6 +722,7 @@ export class Obstacles {
     if (flyer) o.x += o.vx * (SPAWN_X / Math.max(1, speed)) + speed * 0.3;
     o.group.position.set(o.x, o.y, 0);
     this.active.push(o);
+    this.spawnIdx++;
 
     // Chrome-like gap: enough room to land between obstacles, growing with speed. The 3D view sees
     // far down the track, so it gives up reaction room for tighter sequences (still clearable with full jumps).

@@ -28,7 +28,8 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 | Duck / fast-fall | `↓` / `S` | swipe down, or the ↓ button |
 | Atomic breath (when the meter is full) | `F` / `X` / `Shift` | flame button |
 | Switch 2D / 3D | `V` / `C` | 2D/3D toggle (top left) |
-| Pause | `P` / `Esc` | pause button |
+| Pause | `P` / `Esc` (the game also pauses when its window loses focus) | pause button |
+| Back to the title (game over) | `Esc` | Main menu button |
 | Mute | `M` | speaker button |
 | Graphics quality | `Q` | quality button |
 | Company leaderboard | `L` | trophy button |
@@ -116,6 +117,14 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 - Obstacles are pooled, scenery is instanced, particles reuse fixed buffers and the main loop avoids allocations.
 - Measured on an Intel Arc 140T integrated GPU at 1280×720: 60 fps on High through the army stage, Kaiju Rage and the boss fight at top speed. Game logic stays under 1 ms a frame; a few isolated frames per minute take 33–50 ms.
 
+## Testing
+
+Every part of the game's development ends with the same gates (see `tools/README.md`):
+
+- `npm test`: leaderboard and save safety against a mock store with injected failures, hitbox parity (every monster keeps the Kaiju's hitbox heights), and the bot matrix, where the autopilot plays every level in 2D and 3D with every monster on fixed seeds in fast simulation to loop 4 and must not die once.
+- `npm run test:perf`: reference scenes with frame-time percentiles, GPU time, draw calls and triangles, compared with the baseline in `docs/perf/`.
+- URL switches: `?seed=N` replays a run's obstacle sequence and gunship volleys, `?sim=N` runs N fixed simulation steps per frame (it never posts or saves), `?perf` shows a performance overlay, `?debug` turns off collisions.
+
 ## Project layout
 
 ```
@@ -136,7 +145,8 @@ src/
   entities/Skins.js       the seven dragon skins and their builds
   entities/Monsters.js    the monster roster and unlock goals
   entities/Moth.js        Mothra: painted fan-shaped wings, IK legs, same interface as the dragon
-  game/Progress.js        lifetime stats and unlocks
+  game/Progress.js        lifetime stats and unlocks (saved on tab hide too, merged across tabs)
+  game/PerfMonitor.js     ?perf overlay: frame times, CPU/GPU time, draw calls, triangles
   entities/Crystals.js    instanced radiation crystals
   world/City.js           city biome: skyline, road, buildings and cars, procedural lit windows
   world/Volcano.js        volcano biome: smoking volcanoes, lava, meteors, basalt pillars
@@ -149,4 +159,4 @@ src/
 public/                   service worker, manifest, icon
 ```
 
-Add `?debug` to the URL to turn off collisions (useful for sightseeing).
+Add `?debug` to the URL to turn off collisions (useful for sightseeing). The roadmap for making the game 100x better is in `docs/ROADMAP.md` and `docs/PROGRAM.md`.

@@ -103,7 +103,9 @@ export class Boss {
     return out;
   }
 
-  start(cycle, home) {
+  /** rand: this fight's seeded random stream (volley choice), so a seed replays the same fight. */
+  start(cycle, home, rand = Math.random) {
+    this.rand = rand;
     this.cycle = cycle;
     this.state = 'enter';
     this.t = 0;
@@ -199,7 +201,7 @@ export class Boss {
 
   _volley() {
     const pool = this.cycle === 0 ? 4 : VOLLEYS.length;
-    const v = VOLLEYS[Math.floor(Math.random() * pool)];
+    const v = VOLLEYS[Math.floor((this.rand || Math.random)() * pool)];
     const gap = Math.max(0.78, 0.9 - 0.04 * this.cycle); // between launches; full jumps still fit between low missiles
     v.forEach((k, i) => this.queue.push({ t: WARN_TIME + i * gap, y: k === 'L' ? MISSILE_LOW : MISSILE_MID }));
     this.cool = WARN_TIME + v.length * gap + Math.max(0.9, 1.5 - 0.15 * this.cycle);

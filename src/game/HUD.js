@@ -178,6 +178,11 @@ export class HUD {
   }
 
   // ------------------------------------------------------------------ menus
+  /** Menus (title, game over): the in-run scoreboard, meters, touch buttons and pause button hide. */
+  setMenu(on) {
+    this.el.hud.classList.toggle('menu', on);
+  }
+
   show(name, on) {
     const node = this.el[name];
     if (node) node.classList.toggle('hidden', !on);

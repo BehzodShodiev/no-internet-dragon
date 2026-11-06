@@ -1,13 +1,24 @@
 # Tools
 
-Development helpers (not part of the game build).
+Development helpers (not part of the game build). The test tools start their own Vite dev server (or take `--url`) and drive headless Chrome (found in the usual install locations, or set `CHROME`). Node 22+.
+
+| Command | What it checks |
+| --- | --- |
+| `npm test` | Everything below except perf: data safety, hitbox parity, bot matrix. |
+| `npm run test:matrix` (`tools/botmatrix.mjs`) | The fairness gate: the autopilot plays every level × 2D/3D × monster × seed (101, 202) in fast fixed-step simulation (`?sim=10`) until loop 4; exit 1 on any death. Options: `--levels 1,2 --views 3d --monsters mothra --seeds 7 --loops 2 --workers 3 --quick`. Prints the seed of every death, so `?seed=` replays it. About 6 minutes with 3 workers. |
+| `npm run test:hitbox` (`tools/hitcheck.mjs`) | Every monster keeps the Kaiju's hitbox heights: running top, ducking top and airborne bottom within `--tol 0.05`. |
+| `npm run test:data` (`tools/datatest.mjs`) | Leaderboard and save safety against `mock-claude.js` with injected failures: a row is never replaced or blindly overwritten, view-only viewers are told, old local saves still load. |
+| `npm run test:perf` (`tools/perf.mjs`) | Reference scenes played in real time with `?perf`: frame-time percentiles, frames over 33/50 ms, CPU and GPU time, draw calls, triangles, load steps. `--save file.json`, `--baseline file.json` (see `docs/perf/`), `--scenes a,b`. Run it alone. |
+| `npm run artifact` | Single-file build, then `make-artifact.mjs` (page body for the claude.ai artifact: title first, no html/head/body wrapper) and `scan-artifact.mjs` (no external URLs or network APIs, gzip within `--gzip-kb 400`) into `dist-single/artifact.html`. |
 
 | File | Use |
 | --- | --- |
-| `make-artifact.mjs` | `node tools/make-artifact.mjs dist-single/index.html <out.html>`: turns the single-file build into a claude.ai artifact page (title first, no html/head/body wrapper). Run `npm run build:single` first. |
-| `scan-artifact.mjs` | `node tools/scan-artifact.mjs <out.html>`: checks the page for external URLs the artifact sandbox would block (all counts should be 0). |
-| `cdp.mjs` | `node --experimental-websocket tools/cdp.mjs <url> <outdir> <steps.json> [w h]`: drives headless Chrome over CDP with a JSON list of steps (`waitState`, `wait`, `key`, `down`/`up`, `cdp`, `click`, `reload`, `eval`, `shot`) and saves screenshots. Finds Chrome in the usual install locations, or set `CHROME` to its path. |
-| `bot.js` | Autopilot to `eval` into the page: jumps ground obstacles, ducks mid-height flyers, smashes what's too tall to jump, fires the breath at the gunship. With a gliding monster (Mothra) it keeps holding jump past the top only while nothing is due before landing (`glides`, `glideTime`, `drops` count this). Set `window.__smasher = true` first to also smash everything breakable. Reads deaths and logs from `window.__bot`. |
-| `botrun.mjs` | `node tools/botrun.mjs <level 1-3> <2d\|3d> <monster> <seconds> [--smasher]`: runs `bot.js` on the dev server (port 5187) with one level, view and monster (locked ones as the owner's preview) and prints deaths, stage, loops, gunships, glides, fps. A new monster needs all six level/view combinations at 0 deaths (about 150 s each; up to three can run at once). |
-| `hitboxes.js` | Hitbox probe to `eval` into a run opened with `?debug`: samples the monster's boxes while running, ducking, airborne and smashing; read the report from `window.__meas` about 5.5 s later. Compare a new monster against the Kaiju: the heights must match. |
-| `mock-claude.js` | A fake `window.claude` (`db` + `user`) with seeded colleagues, for testing the leaderboard and unlock sync locally. Inject with a `Page.addScriptToEvaluateOnNewDocument` step, then `reload`. |
+| `bot.js` | Autopilot to `eval` into the page. Answers each threat as `Obstacles.respond(o)` says (jump, duck, run under, smash), with fixed human-scale reflexes; glides as Mothra only while nothing is due before landing; fires the breath at the gunship. Runs on every simulation step via `game.stepHook`. `window.__smasher = true` first also smashes everything breakable. Results and the seed of every death in `window.__bot`. |
+| `botrun.mjs` | One real-time bot run: `node tools/botrun.mjs <level 1-3> <2d\|3d> <monster> <seconds> [--smasher]` against the dev server on port 5187. |
+| `hitboxes.js` | Hitbox probe to `eval` into a `?debug` run: per-box ranges while running, ducking, airborne and smashing (`window.__meas`), envelope numbers in `window.__measJSON`. |
+| `cdp.mjs` | `node tools/cdp.mjs <url> <outdir> <steps.json> [w h]`: plays a JSON list of steps (`waitState`, `wait`, `key`, `down`/`up`, `cdp`, `click`, `tap`, `reload`, `eval`/`evalFile`, `shot`) and saves screenshots. |
+| `lib/cdp.mjs`, `lib/server.mjs` | The shared Chrome DevTools driver (`Session`) and dev-server starter used by all of the above. |
+| `mock-claude.js` | A fake `window.claude` (`db` + `user`) with seeded colleagues. URL options: `?mockfail=get` or `get1` (reads of your own row fail), `?mockmine=1` (your row exists), `?mockro=1` (view-only). `window.__mockWrites`, `window.__mockDocs`. |
+| `make-artifact.mjs`, `scan-artifact.mjs` | See `npm run artifact`. |
+
+Game URL switches for testing: `?seed=N` (replayable runs), `?sim=N` (fast fixed-step simulation, never posts or saves), `?perf` (performance overlay and `window.__perf`), `?debug` (no collisions).

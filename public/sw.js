@@ -1,9 +1,12 @@
 // Offline-first service worker: once loaded, the game runs with no network at all.
-const CACHE = 'no-internet-dragon-v1';
+// The build (vite.config.js, swManifest) stamps a content version into CACHE and lists every hashed
+// asset in ASSETS, so the first visit already caches the whole game and a new build replaces the old cache.
+const CACHE = 'no-internet-dragon-dev';
+const ASSETS = [/*ASSETS*/];
 
 self.addEventListener('install', (e) => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './icon.svg', './manifest.webmanifest'])));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(['./', './index.html', './icon.svg', './manifest.webmanifest', ...ASSETS])));
 });
 
 self.addEventListener('activate', (e) => {

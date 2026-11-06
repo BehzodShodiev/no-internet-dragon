@@ -10,6 +10,14 @@ export function mulberry32(seed) {
   };
 }
 
+/** Mixes two 32-bit integers into one well-spread 32-bit seed (for per-spawn and per-boss RNG streams). */
+export function hash32(a, b) {
+  let x = (a ^ Math.imul((b >>> 0) + 0x9e3779b9, 0x85ebca6b)) >>> 0;
+  x = Math.imul(x ^ (x >>> 16), 0x7feb352d);
+  x = Math.imul(x ^ (x >>> 15), 0x846ca68b);
+  return (x ^ (x >>> 16)) >>> 0;
+}
+
 const GRAD3 = new Float32Array([
   1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
   1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
