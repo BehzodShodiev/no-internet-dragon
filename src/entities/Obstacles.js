@@ -659,6 +659,8 @@ export class Obstacles {
       o.x -= (speed + o.vx) * dt;
       o.t += dt;
       o.group.position.set(o.x, o.y + (o.z0 && (o.type === 'heli' || o.type === 'ptero') ? 3 * smooth(50, 110, o.x) * hard : 0), o.z0 ? o.z0 * smooth(50, 110, o.x) * hard : 0);
+      // 3D: things rise out of the ground far down the track instead of popping into view (2D never sees x > 25)
+      o.group.scale.y = hard > 0 && o.x > 96 ? Math.max(0.001, 1 - hard * (1 - smooth(122, 100, o.x))) : 1;
       if (o.type === 'ptero') this._animatePtero(o);
       else if (o.type === 'heli') this._animateHeli(o);
       else if (o.type === 'tank') this._updateTank(o, dt, speed);

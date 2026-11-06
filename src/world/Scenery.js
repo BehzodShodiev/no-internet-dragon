@@ -80,7 +80,7 @@ export class Scenery {
     const rand = mulberry32(31337);
 
     const bushMat = new THREE.MeshStandardMaterial({
-      map: tex.brush, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 1, metalness: 0,
+      map: tex.brush, alphaTest: 0.45, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 1, metalness: 0,
     });
     const mesaMat = (this.mesaMat = new THREE.MeshStandardMaterial({
       vertexColors: true, map: tex.rock.map, normalMap: tex.rock.normalMap, roughness: 0.95, metalness: 0,

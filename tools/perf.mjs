@@ -48,6 +48,14 @@ for (const name of pick) {
   await sleep(secs * 1000);
   const st = await s.evaluate('JSON.stringify(window.__perf.snapshot())').then((j) => JSON.parse(j));
   const deaths = await s.evaluate('window.__bot.deaths');
+  // Full-load render cost: freeze the scene and time back-to-back renders with a forced GPU sync.
+  // At vsync the iGPU clocks down to fit the frame, so the timer-query figure above drifts with power
+  // management; this one runs the GPU flat out (median of 3 batches of 20 frames).
+  st.full = +(await s.evaluate(`(() => { const g = window.__game; g._update = () => {}; clearInterval(window.__perfTimer);
+    const r = g.renderer, gl = r.renderer.getContext(), px = new Uint8Array(4), sync = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    for (let i = 0; i < 10; i++) r.render(g.time, 0, g.flashColor); sync();
+    const b = []; for (let k = 0; k < 3; k++) { const t0 = performance.now(); for (let i = 0; i < 20; i++) r.render(g.time, 0, g.flashColor); sync(); b.push((performance.now() - t0) / 20); }
+    b.sort((x, y) => x - y); return b[1].toFixed(2); })()`));
   await s.close();
   const loadTotal = load.length ? load[load.length - 1].t : null;
   const steps = load.map((x, i) => (i ? `${load[i - 1].text.replace(/…/g, '')} ${x.t - load[i - 1].t}` : null)).filter(Boolean).join(' · ');
@@ -55,7 +63,7 @@ for (const name of pick) {
   if (!ok) over++;
   results[name] = { ...st, loadMs: loadTotal, loadSteps: steps, deaths };
   for (const f of st.longFrames || []) console.log(`      long frame ${f.ms} ms at ${f.at} ms: ${f.newPrograms} new programs, update ${f.update} ms, render ${f.render} ms`);
-  console.log(`${ok ? 'pass' : 'OVER'}  ${name.padEnd(16)} p50 ${st.p50} p95 ${st.p95} p99 ${st.p99} ms · >33ms ${st.long33} >50ms ${st.long50} · cpu ${st.cpuUpdate}+${st.cpuRender} ms · gpu ${st.gpu ?? 'n/a'} ms · ${st.calls} draws · ${(st.triangles / 1e6).toFixed(2)}M tris · load ${loadTotal} ms`);
+  console.log(`${ok ? 'pass' : 'OVER'}  ${name.padEnd(16)} p50 ${st.p50} p95 ${st.p95} p99 ${st.p99} ms · >33ms ${st.long33} >50ms ${st.long50} · cpu ${st.cpuUpdate}+${st.cpuRender} ms · gpu ${st.gpu ?? 'n/a'} ms · full ${st.full} ms · ${st.calls} draws · ${(st.triangles / 1e6).toFixed(2)}M tris · load ${loadTotal} ms`);
 }
 await close();
 console.log('load steps (ms):', Object.values(results)[0]?.loadSteps || '');
@@ -67,7 +75,7 @@ if (A.baseline && fs.existsSync(A.baseline)) {
     const b = base[name];
     if (!b) continue;
     const d = (k, unit = '') => `${k} ${b[k]}→${r[k]}${unit}`;
-    console.log(`  ${name.padEnd(16)} ${d('p95', 'ms')} · ${d('calls')} · tris ${(b.triangles / 1e6).toFixed(2)}→${(r.triangles / 1e6).toFixed(2)}M · ${d('gpu', 'ms')} · ${d('loadMs', 'ms')}`);
+    console.log(`  ${name.padEnd(16)} ${d('p95', 'ms')} · ${d('calls')} · tris ${(b.triangles / 1e6).toFixed(2)}→${(r.triangles / 1e6).toFixed(2)}M · ${d('gpu', 'ms')} · ${d('full', 'ms')} · ${d('loadMs', 'ms')}`);
   }
 }
 if (A.save) fs.writeFileSync(A.save, JSON.stringify(results, null, 1));

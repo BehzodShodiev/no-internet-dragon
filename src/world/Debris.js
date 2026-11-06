@@ -5,7 +5,17 @@ const MAX = 220;
 
 export class Debris {
   constructor(scene, tex) {
-    const g = new THREE.BoxGeometry(1, 1, 1);
+    // rubble chunks rather than cubes: a squashed, jagged low-poly stone
+    const g = new THREE.IcosahedronGeometry(0.62, 0);
+    const pos = g.attributes.position;
+    // the geometry isn't indexed: each corner exists once per face, so the jitter is keyed on the
+    // position (every copy of a corner moves the same way and the faces stay closed)
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const k = 0.72 + 0.45 * Math.abs(Math.sin(x * 12.9898 + y * 78.233 + z * 37.719));
+      pos.setXYZ(i, x * k * 1.15, y * k * 0.8, z * k);
+    }
+    g.computeVertexNormals();
     this.mesh = new THREE.InstancedMesh(
       g,
       new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0.05, normalMap: tex.rock.normalMap }),

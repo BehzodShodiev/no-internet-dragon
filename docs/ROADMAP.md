@@ -10,7 +10,7 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 | B | Sound and music: original adaptive score, mix buses and limiter, soundscape, per-monster voices | **Done** 2026-11-06, artifact v13 |
 | C | Performance overhaul: scenery LOD, post chain, IBL reuse, Auto quality v2, pooling, idle rendering, faster loading | **Done** 2026-11-06, artifact v14 |
 | D | Game feel and fair score economy: jump buffer, Rage on demand, combo fairness, smash mastery, loops add threats, camera and juice | **Done** 2026-11-06, artifact v15 |
-| E | Looks I: grading, atmosphere, local lights, shadows, VFX and destruction | Not started |
+| E | Looks I: grading, atmosphere, local lights, shadows, VFX and destruction | **E1 done** 2026-11-06, artifact v16 · E2 next (list below) |
 | F | Menus, UX and onboarding: transitions, settings and pause menu, game over v2, unlock reveal, Bootcamp, accessibility | Not started |
 | G | Signature abilities, Rodan (roster part 3), monster fidelity | Not started |
 | H | Living levels: patterns and set pieces, new obstacle behaviours, power-ups, world detail | Not started |
@@ -52,6 +52,17 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Loops: `obstacles.cycle` now follows `stages.cycle` at every stage change (tightening and armed tanks no longer wait for a gunship kill); spawn-table rows take a "from loop" value (`TABLES` in `Obstacles.js`), and the Desert brings helicopters from loop 2 and tanks from loop 3; new loops are announced (LOOP n). In 3D, some cars, tanks and flyers swing in from the side (`o.z0`), locked onto the track by x = 50 (2D never sees it; collisions ignore z).
 - Camera and juice (`CameraRig`): smooth-noise shake with roll, speed-based FOV, a zoom punch on smashes, a death cam, gunship framing; haptics on phones; everything honours `dragon.motion` (default: the system's reduced-motion setting), which also tones flashes down.
 - Gates: matrix 36/36 at 0 deaths; data, audio and hitbox pass. Score impact on identical seeds (bot points per game second, part C → D): Kaiju 142.2 → 142.2, Ghidorah 163.0 → 165.9 (+2%), Mothra 86.9 → 72.7 (−16%, the bot no longer gets Rage automatically), all −3%. Within the +10% guard, so existing leaderboard scores stay comparable (human players who smash and burn more will score somewhat more).
+
+### Results of part E1
+
+- Sky (`Environment.js`): lit procedural clouds in the sky shader (cover per biome and time of day, pink at sunset, ash over the volcano), a Milky Way band and occasional shooting stars at night. Noon is clear air: thinner haze, a deeper blue sky (`uSkyGain`, mirrored in the fog colour so the horizon still matches). Cloud and Milky Way noise comes from one baked tileable fbm texture (`textures.makeNoiseTexture`, cached by `TexCache`), so the sky costs about what part D's did to compile and draw.
+- Grade: one grade per world inside the merged tone-map pass (`Renderer.setGrade(sat, contrast, gain, lift)`, chosen in `Game._grade`); ACES kept.
+- Explosions (`src/world/Blasts.js`, three instanced draws that exist from load): a fireball that burns from white through orange to a rising puff of smoke (premultiplied blending, lit by the scene's ambient light), a shockwave ring on the ground and a scorch mark that scrolls away with the sand; a warm point light flashes on the surroundings (`blastLight`, always in the scene at zero intensity so the light set stays constant).
+- Shadows: in 3D the shadow box reaches 52 units and centres ahead of the monster, so shadows no longer end mid-screen.
+- Smaller things: obstacles rise out of the ground as they spawn in 3D; Low quality gets FXAA (it has no MSAA); bushes use alpha-to-coverage; smashed obstacles break into faceted rubble instead of cubes.
+- Perf (`docs/perf/partE.json`, measured against part D's code on the same machine): new `full` metric in `tools/perf.mjs`, the render cost with the scene frozen and the GPU flat out (the timer-query figure drifts with the iGPU's clock at vsync). Desert noon 3D 2.71 → 2.71 ms, City Siege 2.51 → 2.63, Volcano gunship 2.52 → 2.51, Desert night 2D 2.36 → 2.52, phone Medium 2.81 → 2.39; 6–8 fewer draws per scene; no frame over 50 ms; load time unchanged. Gates: matrix 36/36 at 0 deaths, data, audio and hitbox pass.
+
+**Part E2, still to do** (in this order): height fog with sun in-scattering; volcano plume lit by lava; contact shadows past the shadow box and a ground-proximity AO term; particle shader upgrade (rotation, fire and smoke sprites, fade near the ground); building collapse into dust and shards in the obstacle's colours; breath impact splash and scorched ground; missile smoke ribbons; pterodactyl as one mesh with shader-animated wings; the local light pool fixed per preset (High 3, Medium 1, Low 0) for muzzle flashes, lava and street lamps.
 
 ## Monster roster
 

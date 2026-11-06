@@ -4,6 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { FXAAShader } from '../gfx/FXAAShader.js';
 
 export const QUALITY = {
   low: { pr: 1.0, msaa: 0, shadow: 1024, soft: false, bloom: false, terrain: 200, density: 0.4 },
@@ -44,6 +45,9 @@ const GradeShader = {
     uFlash: { value: 0 },
     uFlashColor: { value: new THREE.Color(1, 0.2, 0.1) },
     uSat: { value: 1.06 },
+    uContrast: { value: 1 },
+    uGain: { value: new THREE.Vector3(1, 1, 1) },
+    uLift: { value: new THREE.Vector3(0, 0, 0) },
   },
   vertexShader: /* glsl */ `
     precision highp float;
@@ -59,7 +63,8 @@ const GradeShader = {
     #include <tonemapping_pars_fragment>
     #include <colorspace_pars_fragment>
     uniform sampler2D tDiffuse;
-    uniform float uTime, uVignette, uGrain, uCA, uFlash, uSat, uHaze, uHorizon;
+    uniform float uTime, uVignette, uGrain, uCA, uFlash, uSat, uHaze, uHorizon, uContrast;
+    uniform vec3 uGain, uLift;
     uniform vec2 uRes;
     uniform vec3 uFlashColor;
     varying vec2 vUv;
@@ -79,6 +84,9 @@ const GradeShader = {
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv + dc * ca).b;
       col = sRGBTransferOETF(vec4(ACESFilmicToneMapping(col), 1.0)).rgb;
+      // the world's grade: gain on the highlights, lift in the shadows (split toning), contrast
+      col = col * uGain + uLift * (1.0 - col);
+      col = clamp((col - 0.5) * uContrast + 0.5, 0.0, 1.0);
       float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(lum), col, uSat);
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.12);
@@ -167,6 +175,7 @@ export class Renderer {
       this.scenePass.dispose();
       this.bloom.dispose();
       this.grade.material.dispose();
+      this.fxaa?.material.dispose();
     }
     const q = this.quality;
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
@@ -179,6 +188,9 @@ export class Renderer {
     composer.addPass(this.bloom);
     this.grade = new ShaderPass(new THREE.RawShaderMaterial(GradeShader));
     composer.addPass(this.grade);
+    // Low has no MSAA: FXAA smooths edges for the price of one cheap full-screen pass
+    this.fxaa = q.msaa ? null : new ShaderPass(FXAAShader);
+    if (this.fxaa) composer.addPass(this.fxaa);
     this.composer = composer;
     this.resize();
   }
@@ -214,6 +226,7 @@ export class Renderer {
       this.composer.setPixelRatio(pr);
       this.composer.setSize(w, h);
       this.grade.uniforms.uRes.value.set(w * pr, h * pr);
+      this.fxaa?.uniforms.resolution.value.set(1 / (w * pr), 1 / (h * pr));
     }
     this.aspect = w / h;
   }
@@ -272,7 +285,7 @@ export class Renderer {
   postMaterials() {
     const b = this.bloom;
     const hdr = [this.scenePass.quad.material, b.materialHighPassFilter, ...(b.separableBlurMaterials || []), b.compositeMaterial, b.blendMaterial].filter(Boolean);
-    return { hdr, screen: [this.grade.material] };
+    return this.fxaa ? { hdr: [...hdr, this.grade.material], screen: [this.fxaa.material] } : { hdr, screen: [this.grade.material] };
   }
 
   /** Applies a preset chosen by Auto (the game calls this between runs). */
@@ -294,6 +307,15 @@ export class Renderer {
       }
       gl.deleteQuery(q);
     }
+  }
+
+  /** The colour grade, eased in from the game: saturation, contrast, highlight gain and shadow lift. */
+  setGrade(sat, contrast, gain, lift) {
+    const g = this.grade.uniforms;
+    g.uSat.value = sat;
+    g.uContrast.value = contrast;
+    g.uGain.value.copy(gain);
+    g.uLift.value.copy(lift);
   }
 
   setHaze(amount, horizon) {

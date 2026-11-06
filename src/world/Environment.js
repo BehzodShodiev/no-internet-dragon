@@ -99,7 +99,8 @@ function twilightSky(dir, sunDir, deep, glow, out) {
 }
 
 export class Environment {
-  constructor(renderer, scene) {
+  /** noiseTex: the shared tileable fbm texture (textures.makeNoiseTexture) for clouds and the Milky Way. */
+  constructor(renderer, scene, noiseTex) {
     this.renderer = renderer;
     this.scene = scene;
     this.params = { turbidity: 2.4, rayleigh: 1.8, mieCoefficient: 0.0014, mieDirectionalG: 0.88 };
@@ -114,15 +115,33 @@ export class Environment {
     u.uGlow = { value: 0 };
     u.uVolc = { value: 0 };
     u.uCity = { value: 0 };
+    // procedural clouds (lit by the sun, scrolling with the run), the Milky Way, shooting stars
+    u.uSkyGain = { value: 1 }; // the visible sky's brightness (mirrored in the fog colour)
+    u.uNoise = { value: noiseTex };
+    u.uCloudOff = { value: new THREE.Vector2() };
+    u.uCloudCover = { value: 0.45 };
+    u.uCloudLit = { value: new THREE.Color(1, 1, 1) };
+    u.uCloudShade = { value: new THREE.Color(0.6, 0.62, 0.7) };
+    u.uStreakA = { value: new THREE.Vector3(0, 1, 0) };
+    u.uStreakB = { value: new THREE.Vector3(0, 1, 0) };
+    u.uStreak = { value: 0 };
+    this.streak = { t: 8, life: 0, a: new THREE.Vector3(), b: new THREE.Vector3() };
     // biome blend: 0..1 weights for the volcano's ember sky and the city's light pollution
     this.biome = { volc: 0, city: 0, tVolc: 0, tCity: 0 };
     // Three's Preetham sky turns muddy black around sunset. Blend in a twilight sky instead:
     // blue hour with a sunset glow on the sun's side, deepening into navy night (mirrored by twilightSky()).
     this.sky.material.fragmentShader = this.sky.material.fragmentShader
-      .replace('uniform float mieDirectionalG;', 'uniform float mieDirectionalG;\nuniform float uNight;\nuniform float uDeep;\nuniform float uGlow;\nuniform float uVolc;\nuniform float uCity;')
+      .replace('uniform float mieDirectionalG;', `uniform float mieDirectionalG;
+        uniform float uNight; uniform float uDeep; uniform float uGlow; uniform float uVolc; uniform float uCity;
+        uniform sampler2D uNoise; uniform float uSkyGain; uniform vec2 uCloudOff; uniform float uCloudCover; uniform vec3 uCloudLit; uniform vec3 uCloudShade;
+        uniform vec3 uStreakA; uniform vec3 uStreakB; uniform float uStreak;
+        // fbm from the baked noise texture (one lattice cell = a quarter of it): 5 octaves in R, 3 in G
+        float skyFbm(vec2 p) { return texture2D(uNoise, p * 0.25).r; }
+        float skyFbm3(vec2 p) { return texture2D(uNoise, p * 0.25).g; }`)
       .replace(
         'gl_FragColor = vec4( retColor, 1.0 );',
-        /* glsl */ `float up = max(direction.y, 0.0);
+        /* glsl */ `retColor *= uSkyGain; // keeps a high sun's sky blue instead of tone-mapping to white
+        float up = max(direction.y, 0.0);
         float hz = pow(1.0 - up, 4.0);
         vec3 zen = mix(vec3(0.05, 0.09, 0.22), vec3(0.006, 0.011, 0.03), uDeep);
         vec3 hor = mix(vec3(0.24, 0.18, 0.32), vec3(0.03, 0.045, 0.085), uDeep);
@@ -137,6 +156,33 @@ export class Environment {
         retColor = mix(retColor, volc, uVolc);
         // city: light pollution glowing up from the horizon after dark
         retColor += vec3(0.3, 0.17, 0.08) * pow(1.0 - up, 7.0) * uCity * uNight;
+        // the Milky Way: a soft, mottled band across the night sky (washed out by city lights).
+        // Noise is fetched outside any branch, so its mip selection always has valid derivatives.
+        float mwK = uNight * uDeep * (1.0 - 0.75 * uCity) * (1.0 - uVolc);
+        vec3 mwN = normalize(vec3(0.32, 0.46, -0.83));
+        float mwD = dot(direction, mwN);
+        float mw = exp(-mwD * mwD * 26.0) * (0.45 + 0.55 * skyFbm(direction.xz * 7.0 + direction.y * 3.0));
+        mw *= smoothstep(0.35, 0.65, skyFbm3(direction.xy * 11.0 + 4.0)) * 0.7 + 0.3;
+        retColor += vec3(0.2, 0.24, 0.34) * mw * mwK * smoothstep(0.0, 0.25, up);
+        // a shooting star: a bright streak along a short arc, fading toward its tail
+        if (uStreak > 0.0) {
+          vec3 sn = normalize(cross(uStreakA, uStreakB));
+          float sd = abs(dot(direction, sn));
+          float inSeg = step(0.0, dot(cross(uStreakA, direction), sn)) * step(0.0, dot(cross(direction, uStreakB), sn));
+          float along = clamp(dot(direction - uStreakA, normalize(uStreakB - uStreakA)) / max(length(uStreakB - uStreakA), 1e-4), 0.0, 1.0);
+          retColor += vec3(0.9, 0.95, 1.0) * exp(-pow(sd / 0.0016, 2.0)) * inSeg * along * along * uStreak * 3.0;
+        }
+        // clouds: fbm on a high plane, lit on the sun's side, thinning toward the horizon
+        {
+          vec2 cp = direction.xz / (up + 0.06) * 0.55 + uCloudOff;
+          float n = skyFbm(cp * 0.9);
+          float cover = smoothstep(1.0 - uCloudCover, 1.0 - uCloudCover + 0.15, n);
+          float edge = smoothstep(0.0, 0.18, direction.y) * (1.0 - smoothstep(0.55, 0.95, direction.y) * 0.5);
+          float sunSide = pow(max(dot(direction, vSunDirection), 0.0), 5.0);
+          float thick = smoothstep(1.0 - uCloudCover, 1.0, skyFbm(cp * 0.9 + 0.35));
+          vec3 cloud = mix(uCloudLit, uCloudShade, thick * 0.75) + uCloudLit * sunSide * 0.6 * (1.0 - thick);
+          retColor = mix(retColor, cloud, cover * edge * 0.85);
+        }
         gl_FragColor = vec4( retColor, 1.0 );`
       );
     scene.add(this.sky);
@@ -296,6 +342,7 @@ export class Environment {
       s.userData.baseX = rand() * this.cloudSpan;
       s.position.set(0, 110 + rand() * 260 + (far ? 0 : 60), z);
       s.renderOrder = -1;
+      s.visible = false; // the sky shader draws the clouds now (lit, and 26 fewer draws)
       this.clouds.push(s);
       this.cloudGroup.add(s);
     }
@@ -339,6 +386,15 @@ export class Environment {
     b.volc += (b.tVolc - b.volc) * k;
     b.city += (b.tCity - b.city) * k;
     const volc = b.volc, city = b.city;
+    {
+      const hi = smooth(15, 50, this.sunElev);
+      const p = this.params, su = this.sky.material.uniforms;
+      p.turbidity = 2.4 - 0.8 * hi;
+      p.rayleigh = 1.8 + 0.5 * hi;
+      su.turbidity.value = p.turbidity;
+      su.rayleigh.value = p.rayleigh;
+      su.uSkyGain.value = 1 - 0.38 * hi;
+    }
     u.uVolc.value = volc;
     u.uCity.value = city;
 
@@ -355,6 +411,15 @@ export class Environment {
     const sunCol = this._tmpC.setRGB(1.0, 0.42, 0.18).lerp(C_SUN_DAY, smooth(2, 38, elev));
     const useMoon = elev < -2;
     const dir = useMoon ? this.moonLightDir : this.sunDir;
+    // 3D sees far down the track: the shadow box stretches forward with the view (2D keeps it tight and sharp)
+    const reach = 34 + 18 * viewBlend;
+    const shc = this.light.shadow.camera;
+    if (Math.abs(shc.right - reach) > 0.5) {
+      shc.left = shc.bottom = -reach;
+      shc.right = shc.top = reach;
+      shc.updateProjectionMatrix();
+    }
+    this.light.target.position.x = 14 + 16 * viewBlend;
     this.light.position.copy(this.light.target.position).addScaledVector(dir, 80);
     if (useMoon) {
       this.light.color.setRGB(0.5, 0.64, 1.0);
@@ -402,13 +467,16 @@ export class Environment {
     this._tmpV.normalize();
     this._tmpV.y = 0.035;
     this._tmpV.normalize();
-    const fogC = skyColor(this._tmpV, this.sunDir, this.params, (this._fogA ||= new THREE.Color()));
+    const fogC = skyColor(this._tmpV, this.sunDir, this.params, (this._fogA ||= new THREE.Color())).multiplyScalar(u.uSkyGain.value);
     fogC.lerp(twilightSky(this._tmpV, this.sunDir, deep, u.uGlow.value, (this._fogB ||= new THREE.Color())), u.uNight.value);
     fogC.lerp(this._tmpC2.setRGB(0.17, 0.12, 0.12), 0.45 * cityNight);
     fogC.lerp(this._tmpC2.setRGB(0.3, 0.11, 0.05), volc);
     this.scene.fog.color.copy(fogC);
     const density = THREE.MathUtils.lerp(0.0017, 0.002, viewBlend);
-    this.scene.fog.density = density * (1 + 0.4 * night);
+    // midday is clear air: thinner haze with the sun high (the volcano keeps its smoke)
+    const noon = smooth(15, 50, elev) * (1 - volc) * (1 - city);
+    this.scene.fog.density = density * (1 + 0.4 * night) * (1 - 0.35 * noon);
+    this.noonK = noon;
 
     // stars, moon
     this.starMat.uniforms.uOpacity.value = smooth(-4, -11, elev) * (1 - volc);
@@ -433,6 +501,30 @@ export class Environment {
     ct.lerp(C_CLOUD_NIGHT, deep);
     ct.lerp(C_CLOUD_ASH, volc); // ash clouds
     for (const c of this.clouds) c.material.color.copy(ct);
+    // sky clouds: lit colour from the same tint, shade a darker, cooler version; cover by biome
+    u.uCloudLit.value.copy(ct);
+    u.uCloudShade.value.copy(ct).multiplyScalar(0.62).lerp(C_CLOUD_NIGHT, 0.25);
+    u.uCloudCover.value = 0.42 - 0.05 * smooth(15, 50, elev) + 0.08 * city + 0.18 * volc;
+    // a shooting star now and then, after dark
+    const sk = this.streak;
+    sk.t -= dt;
+    if (sk.life > 0) {
+      sk.life -= dt;
+      const k = 1 - Math.max(0, sk.life) / 0.7;
+      u.uStreakB.value.copy(sk.a).lerp(sk.b, k).normalize();
+      u.uStreakA.value.copy(sk.a).lerp(sk.b, Math.max(0, k - 0.35)).normalize();
+      u.uStreak.value = Math.sin(Math.PI * k) * night * (1 - city * 0.6) * (1 - volc);
+    } else u.uStreak.value = 0;
+    if (sk.t <= 0) {
+      sk.t = 5 + Math.random() * 9;
+      if (night > 0.6) {
+        const az = Math.random() * Math.PI * 2, el = 0.35 + Math.random() * 0.4;
+        sk.a.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+        const az2 = az + (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.2), el2 = el - 0.1 - Math.random() * 0.12;
+        sk.b.set(Math.cos(az2) * Math.cos(el2), Math.sin(el2), Math.sin(az2) * Math.cos(el2));
+        sk.life = 0.7;
+      }
+    }
 
     // refresh image-based lighting when the sun has moved enough
     this.envTimer -= dt;
@@ -443,6 +535,7 @@ export class Environment {
   }
 
   scrollClouds(scroll) {
+    this.sky.material.uniforms.uCloudOff.value.set(scroll * 0.0009, scroll * 0.0002);
     const span = this.cloudSpan;
     const off = scroll * 0.06;
     for (const c of this.clouds) {
@@ -455,6 +548,7 @@ export class Environment {
   _bakeEnv() {
     this.lastEnvSun.copy(this.sunDir);
     const night = this.nightness;
+    void night;
     this.envGround.material.color.setRGB(0.35, 0.26, 0.17).multiplyScalar(Math.max(0.03, smooth(-4, 20, this.sunElev)))
       .lerp(this._tmpC2.setRGB(0.22, 0.07, 0.03), this.biome.tVolc);
     this.cubeCam.update(this.renderer, this.envScene);

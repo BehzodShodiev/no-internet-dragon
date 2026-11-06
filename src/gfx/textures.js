@@ -312,6 +312,44 @@ export function makeBrushTexture(seed = 3) {
   return t;
 }
 
+/**
+ * Tileable fbm noise for shaders (sky clouds, the Milky Way, fireballs): R = 5 octaves, G = 3 octaves
+ * at another offset. One lattice cell spans a quarter of the texture (sample at p * 0.25). Both channels
+ * are remapped to the mean and spread of a shader value-noise fbm, so thresholds tuned on that still hold.
+ * A texture fetch replaces dozens of hash evaluations, which is cheaper to run and far cheaper to compile.
+ */
+export function makeNoiseTexture(size = 256) {
+  const n = size * size;
+  const r = new Float32Array(n), g = new Float32Array(n);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const u = x / size, v = y / size;
+      r[y * size + x] = tn.fbm(u, v, 4, 5);
+      g[y * size + x] = tn.fbm((u + 0.37) % 1, (v + 0.61) % 1, 4, 3);
+    }
+  }
+  const remap = (a, mean, sd) => {
+    let m = 0, q = 0;
+    for (let i = 0; i < n; i++) m += a[i];
+    m /= n;
+    for (let i = 0; i < n; i++) q += (a[i] - m) * (a[i] - m);
+    const k = sd / Math.sqrt(q / n);
+    for (let i = 0; i < n; i++) a[i] = clamp01(mean + (a[i] - m) * k);
+  };
+  remap(r, 0.484, 0.115);
+  remap(g, 0.5, 0.13);
+  const data = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    data[i * 4] = Math.round(r[i] * 255);
+    data[i * 4 + 1] = Math.round(g[i] * 255);
+    data[i * 4 + 2] = 0;
+    data[i * 4 + 3] = 255;
+  }
+  const t = dataTexture(data, size, size);
+  t.anisotropy = 4;
+  return t;
+}
+
 export function makeFootprintTexture(size = 128) {
   const c = document.createElement('canvas');
   c.width = c.height = size;

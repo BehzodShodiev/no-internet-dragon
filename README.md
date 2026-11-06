@@ -106,8 +106,9 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 
 - **Dragon.** A procedural skinned mesh with 18 bones. The body, tail and neck are swept along a spine curve. Legs use analytic 2-bone inverse kinematics, so the feet plant on the sand at any speed. The scale texture is Voronoi-based (normal, roughness and AO maps). Three rows of dorsal plates glow with a Godzilla-style pulse that travels down the spine.
 - **World.** Dunes come from a periodic heightfield displaced on the GPU and snapped to its grid, so they never shimmer while scrolling. Cacti are ribbed saguaros. There are eroded boulders, striped mesas, dry brush and footprints in the sand. All scenery is instanced and tiles endlessly with no per-frame updates.
-- **Lighting.** A physically based (Preetham) sky drives image-based lighting, and fog is computed from the same scattering model so the horizon blends cleanly. A day/night cycle follows your score: golden hour, dusk, then a moonlit night with stars. Shadows are soft.
-- **Post-processing.** MSAA, bloom, filmic tone mapping, colour grading, vignette, film grain, subtle chromatic aberration, and heat haze along the horizon. A guard pass stops any stray NaN/Inf pixel from blacking out the frame.
+- **Lighting.** A physically based (Preetham) sky drives image-based lighting, and fog is computed from the same scattering model so the horizon blends cleanly. Procedural clouds drift across the sky, lit by the sun (pink at sunset, ash over the volcano), and clear nights show the Milky Way and the odd shooting star. A day/night cycle follows your score: clear noon, golden hour, dusk, then a moonlit night with stars. Each world has its own colour grade. Shadows are soft, and in 3D they reach well down the track.
+- **Explosions.** A fireball that burns from white-hot through orange into a rising puff of smoke, a shockwave ring racing over the ground, a flash of light on everything nearby and a scorch mark left in the sand. Smashed obstacles break into tumbling rubble.
+- **Post-processing.** MSAA (FXAA on Low), bloom, filmic tone mapping, colour grading, vignette, film grain, subtle chromatic aberration, and heat haze along the horizon. A guard pass stops any stray NaN/Inf pixel from blacking out the frame.
 - **Military.** Tanks, attack helicopters and the tandem-rotor gunship are modelled in code from rounded boxes and swept hulls, with spinning rotors, recoiling barrels, muzzle flashes, searchlights at night, and shell and missile trails.
 - **Music.** An original score, generated live: a 16th-note sequencer plays a theme per world (a desert mode, a minor synth theme for the city, a heavy Phrygian one for the volcano) plus title and game-over moods. Six layers (pad, bass, drums, arpeggio, brass, lead) fade in with the action: running, the army stages, the gunship, Kaiju Rage. Stingers mark game over, a new best, a gunship down and an unlock.
 - **Audio.** Everything is synthesized with WebAudio and mixed on separate effect, music, interface and ambience buses into a compressor, a limiter and a soft clipper (an offline render test checks that nothing clips). Each world has its own reverb and ambience: desert wind, city hum and traffic, volcanic rumble and crackling lava. Every monster has its own voice and beam: the Kaiju's roar and atomic breath, Ghidorah's three staggered roars and crackling gravity beams, Mothra's high trill and shimmering scale storm. Roars and explosions duck the music. Pterodactyls screech as they come in, meteors whistle down, missiles whoosh off the gunship, windows shatter, and the menus tick and click. The sound stops while paused or in a background tab.
@@ -119,7 +120,7 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 - Only the scene is multisampled: bloom and the final pass (tone mapping and grade merged into one draw) work on plain half-float targets. The sky lighting re-bakes into the same targets every time, so it allocates nothing and never invalidates materials.
 - Background props use lighter meshes than the obstacles you run into (the far saguaros alone were 1.3 million triangles per pass). Obstacles, including their meshes, are pooled and restyled; scenery is instanced; particles reuse fixed buffers; the main loop allocates nothing; the HUD only touches the page when a value changes; in-run buttons skip the frosted-glass blur; paused and menu screens redraw less often.
 - Procedural textures are cached in the browser after the first visit (keyed to the generator code), so repeat visits reach the title in about 1.2 s instead of 3.7 s.
-- Measured in headless Chrome on an Intel iGPU at 1280×720 on High (`npm run test:perf`): GPU time per frame 2.7–3.6 ms across the Desert, City, Volcano gunship and 2D night scenes (down from 4.3–6.1 ms), under 1 million triangles a frame (down from up to 3.7 million), no frames over 50 ms.
+- Measured in headless Chrome on an Intel iGPU at 1280×720 on High (`npm run test:perf`): GPU time per frame 2.7–3.6 ms across the Desert, City, Volcano gunship and 2D night scenes (down from 4.3–6.1 ms), under 1 million triangles a frame (down from up to 3.7 million), no frames over 50 ms. With the GPU running flat out a frame costs 2.4–2.7 ms. Sky and fireball noise is read from one baked texture rather than computed, which keeps those shaders quick to compile and draw.
 
 ## Testing
 
@@ -155,9 +156,10 @@ src/
   entities/Crystals.js    instanced radiation crystals
   world/City.js           city biome: skyline, road, buildings and cars, procedural lit windows
   world/Volcano.js        volcano biome: smoking volcanoes, lava, meteors, basalt pillars
-  world/Debris.js         instanced debris chunks from smashed obstacles
+  world/Debris.js         instanced rubble from smashed obstacles
+  world/Blasts.js         explosions: fireball and smoke, shockwave ring, scorch marks
   world/Terrain.js        GPU-displaced scrolling desert
-  world/Environment.js    sky, sun/moon, stars, clouds, fog, IBL, day/night
+  world/Environment.js    sky (clouds, Milky Way, shooting stars), sun/moon, fog, IBL, day/night
   world/Scenery.js        instanced, endlessly tiling decor
   world/Particles.js      dust/spark particles, breath beam, footprints
   gfx/                    noise, procedural textures, sweep/blob geometry helpers

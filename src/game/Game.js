@@ -20,6 +20,7 @@ import { Terrain } from '../world/Terrain.js';
 import { City } from '../world/City.js';
 import { Volcano } from '../world/Volcano.js';
 import { Debris } from '../world/Debris.js';
+import { Blasts } from '../world/Blasts.js';
 import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
@@ -226,6 +227,7 @@ export class Game {
       this.crystals.clear();
       this.boss.reset();
       this.debris.clear();
+      this.blasts?.clear();
       this._setupWorld();
       this.dragon.setRage(0);
       this.hud.setBoss('', -1, 0);
@@ -354,6 +356,7 @@ export class Game {
       this.obstacles.reset();
       this.crystals.clear();
       this.debris.clear();
+      this.blasts?.clear();
       this._setupWorld(instant);
     }
     this._onBoard();
@@ -388,6 +391,7 @@ export class Game {
     tex.brush = await cache.textures('brush', () => TX.makeBrushTexture());
     tex.dot = await cache.textures('dot', () => TX.makeSoftDotTexture());
     tex.footprint = await cache.textures('footprint', () => TX.makeFootprintTexture());
+    tex.noise = await cache.textures('noise', () => TX.makeNoiseTexture());
     this.tex = tex;
 
     await step(0.48, 'Shaping dunes…');
@@ -397,7 +401,7 @@ export class Game {
     scene.add(this.terrain.mesh);
 
     await step(0.58, 'Painting the sky…');
-    this.env = new Environment(this.renderer.renderer, scene);
+    this.env = new Environment(this.renderer.renderer, scene, tex.noise);
     this.env.setTimeOfDay(this.dayT);
 
     await step(0.68, 'Hatching the dragon…');
@@ -419,6 +423,13 @@ export class Game {
     this.obstacles.volcano = this.volcano;
     this.obstacles.onMeteor = (o) => this._meteorImpact(o);
     this.debris = new Debris(scene, tex);
+    this.blasts = new Blasts(scene, this.tex.noise);
+    // explosions light up what's around them: one pooled light, present from load at zero (the light
+    // set never changes, so no shader ever recompiles for it)
+    this.blastLight = new THREE.PointLight(0xff8a3a, 0, 26, 2);
+    this.blastLightT = 0;
+    this.blastPeak = 0;
+    scene.add(this.blastLight);
     // The dragon's glow lights the way after dark: a soft forward beam that picks out what's coming.
     // It always exists (at zero by day) so the shaders compile with it during loading.
     this.dragonLight = new THREE.SpotLight(0xcfe6ff, 0, 42, 0.62, 0.75, 1);
@@ -1189,6 +1200,27 @@ export class Game {
     m.update(realDt);
   }
 
+  /**
+   * Colour grade per world and hour: warm, crisp sunlight in the desert, a teal-and-orange blue hour in
+   * the city, red-amber in the volcano, cooler and deeper at night. Blended by the sky's biome weights.
+   */
+  _grade(night) {
+    const b = this.env.biome, noon = this.env.noonK || 0;
+    const des = Math.max(0, 1 - b.volc - b.city);
+    const g = (this._gradeGain ||= new THREE.Vector3());
+    const l = (this._gradeLift ||= new THREE.Vector3());
+    g.set(1.02, 1.0, 0.98).multiplyScalar(des)
+      .addScaledVector(this._v.set(1.04, 0.98, 0.93), b.city)
+      .addScaledVector(this._v.set(1.07, 0.95, 0.86), b.volc);
+    l.set(0.0, 0.004, 0.012).multiplyScalar(des).addScaledVector(this._v.set(-0.006, 0.01, 0.03), b.city).addScaledVector(this._v.set(0.02, 0.0, -0.01), b.volc);
+    // night: cooler highlights, bluer shadows
+    g.lerp(this._v.set(0.96, 0.99, 1.06), night * des * 0.8);
+    l.lerp(this._v.set(0.0, 0.006, 0.03), night * des * 0.8);
+    const sat = 1.06 + 0.1 * noon * des + 0.05 * b.city;
+    const contrast = 1.0 + 0.08 * noon * des + 0.06 * b.city + 0.1 * b.volc;
+    this.renderer.setGrade(sat, contrast, g, l);
+  }
+
   _footstep(leg, fx) {
     const x = fx * this.dragon.group.scale.x;
     const z = (leg === 0 ? 0.62 : -0.62) * this.dragon.group.scale.z;
@@ -1253,6 +1285,10 @@ export class Game {
   }
 
   _blast(x, y, size = 1) {
+    this.blasts.burst(x, y, size, y < 2.5);
+    this.blastLight.position.set(x, y + 1.4, 1.2);
+    this.blastPeak = Math.max(this.blastLightT > 0 ? this.blastPeak : 0, 70 * Math.min(1.8, size));
+    this.blastLightT = 0.4;
     for (let i = 0; i < 46 * size; i++) {
       const a = Math.random() * Math.PI * 2, e = (Math.random() - 0.2) * Math.PI * 0.6;
       const v = (4 + Math.random() * 9) * Math.sqrt(size);
@@ -1754,6 +1790,13 @@ export class Game {
     tu.uLava.value = tu.uAsh.value;
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
+    this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);
+    if (this.blastLightT > 0) {
+      this.blastLightT -= dt;
+      this.blastLight.position.x -= this.speed * dt;
+      const k = Math.max(0, this.blastLightT / 0.4);
+      this.blastLight.intensity = this.blastPeak * k * k;
+    } else if (this.blastLight.intensity) this.blastLight.intensity = 0;
     this.env.scrollClouds(this.scroll);
     // the Desert has a day/night cycle; the City and the Volcano keep their own fixed hour
     if (running && this.level.time == null) this.dayT += (this.speed * dt * CFG.scoreRate) / CFG.dayLength;
@@ -1779,6 +1822,7 @@ export class Game {
     this.rig.update(realDt, ro);
     this.env.update(realDt, this.camera, this.time, this.rig.blend);
     this.renderer.renderer.toneMappingExposure = this.env.exposure;
+    this._grade(night);
     // heat haze sits on the horizon line, wherever the camera pitch puts it on screen
     const dir = this.camera.getWorldDirection(this._dir);
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
