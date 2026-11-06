@@ -7,7 +7,7 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 | Part | Content | Status |
 | --- | --- | --- |
 | A | Foundations: bug fixes, leaderboard data safety, seeded runs, fast-sim bot matrix, hitbox and data gates, perf instrumentation | **Done** 2026-11-06, artifact v12 |
-| B | Sound and music: original adaptive score, mix buses and limiter, soundscape, per-monster voices | Not started |
+| B | Sound and music: original adaptive score, mix buses and limiter, soundscape, per-monster voices | **Done** 2026-11-06, artifact v13 |
 | C | Performance overhaul: scenery LOD, post chain, IBL reuse, Auto quality v2, pooling, idle rendering, faster loading | Not started |
 | D | Game feel and fair score economy: jump buffer, Rage on demand, combo fairness, smash mastery, loops add threats, camera and juice | Not started |
 | E | Looks I: grading, atmosphere, local lights, shadows, VFX and destruction | Not started |
@@ -25,6 +25,12 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Seeded runs: `?seed=N` (run k uses N + k); every spawn draws from its own stream `hash32(seed, spawnIndex)`, boss volleys from `hash32(seed, 1000 + boss)`; `Obstacles.RESPONSE` / `respond(o)` say how each type is beaten (tips and bot use it); `_prewarm` is keyed by type and warns about any pool type without a sample.
 - Gates (all pass): `npm run test:matrix` 36/36 (3 levels × 2D/3D × Kaiju, Ghidorah, Mothra × seeds 101 and 202, to loop 4, 0 deaths, about 6 min with 3 workers); `npm run test:hitbox` (Ghidorah within 0.001, Mothra within 0.034 of the Kaiju); `npm run test:data` (12 checks: blocked reads, retries, new rows, read-only viewers, old local saves).
 - Perf baseline (`docs/perf/baseline-partA.json`, headless Chrome on this laptop's iGPU, `?perf`): GPU time per frame Desert noon 3D 6.06 ms (97 draws, **3.73M triangles**), City Siege 3D 4.4 ms (1.13M), Volcano gunship 3D 4.34 ms (1.12M), Desert night 2D 4.38 ms (1.75M), phone Medium 5.0 ms (2.76M). One frame over 50 ms in the Desert and City scenes. Load to title 4.0 s: shader compile 2.3 s, procedural textures about 0.9 s. Headless frames are paced at about 6.9 ms (144 Hz), so GPU time and long frames are the numbers to beat in part C.
+
+### Results of part B
+
+- `src/game/Music.js`: an original procedural score on a 16th-note look-ahead sequencer. Themes for the title, Desert (Phrygian dominant), Night City (minor synth), Volcano (heavy Phrygian) and game over; six layers (pad, bass, drums, arpeggio, brass, lead) follow intensity (title 0, running 1, army/siege/inferno 2, gunship 3, Rage 4, set in `Game._scoreMusic`); stingers for game over, new best, gunship down and unlocks. The old Rage/boss drum loop is gone (the score has its own drums).
+- `src/game/Audio.js`: SFX, music, UI and ambience buses into a glue compressor, a limiter and a soft clipper; a reverb send with a generated impulse per biome; music ducks under roars and explosions; a live-voice count lets optional notes skip when the mix is crowded. Ambience per biome (desert wind, city hum and traffic, volcanic rumble and lava crackle). Per-monster sound (`Monsters.js` `sound`): Kaiju growl and atomic beam, Ghidorah triple roar and gravity beams, Mothra trill and scale storm; the death cry uses the monster's voice. New: pterodactyl screech, meteor whistle, missile launch (panned), glass for buildings, tank treads, UI hover/click/open/close. A paused game or hidden tab suspends the sound.
+- Gates: `npm run test:audio` (new) renders the mix offline: every theme and intensity is audible (title −27 dB RMS, runs −24 to −20 dB, game over −24 dB) and the worst case (every big sound at once over Rage music) peaks at 0.87, no clipping. Quick matrix 18/18 at 0 deaths; the scheduler costs about 0.08 ms per 25 ms tick. Test servers no longer hot-reload (an edit mid-run had swapped monsters under the matrix), and the matrix now fails any run whose monster, level or seed changed underneath it.
 
 ## Monster roster
 

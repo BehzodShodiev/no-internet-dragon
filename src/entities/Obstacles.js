@@ -353,6 +353,7 @@ export class Obstacles {
     o.shooter = false;
     o.reflected = false;
     o.clanged = false;
+    o.cried = false; // its incoming sound (screech, whistle) has played
     o.vm = 0;
     o.smash = SMASH[type];
     o.tall = !!TALL[type];

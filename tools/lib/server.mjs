@@ -12,7 +12,8 @@ export async function serve(url) {
     root,
     configFile: path.join(root, 'vite.config.js'),
     logLevel: 'error',
-    server: { host: '127.0.0.1', port: 5190 + Math.floor(Math.random() * 400), strictPort: false },
+    // no hot reload: an edit during a long test run must not reload the pages under test
+    server: { host: '127.0.0.1', port: 5190 + Math.floor(Math.random() * 400), strictPort: false, hmr: false, watch: null },
   });
   await server.listen();
   const local = server.resolvedUrls?.local?.[0] || `http://127.0.0.1:${server.config.server.port}/`;

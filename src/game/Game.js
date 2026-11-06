@@ -199,7 +199,6 @@ export class Game {
       this.hud.setRage(0, false, false);
       this.hud.resetRival();
       this.hud.setWarnings([]);
-      this.audio.setDrums(0);
       this.audio.setRotor(0);
     }
   }
@@ -208,6 +207,7 @@ export class Game {
   _setupWorld(instant = true) {
     const lv = this.level;
     this.env.setBiome(lv.biome, instant);
+    this.audio.setBiome(lv.biome);
     this.scenery.setBiome(lv.biome);
     this.city.reset();
     if (lv.biome === 'city') this.city.prefill();
@@ -229,7 +229,7 @@ export class Game {
 
   /** The current monster's roar (Mothra's is a high cry). */
   _roar(duration, pitch = 1) {
-    this.audio.roar(duration, pitch * (this.monster.voice ?? 1));
+    this.audio.roar(duration, pitch * (this.monster.voice ?? 1), this.monster.sound?.roar);
   }
 
   /** Picks a skin (only between runs); the dragon on screen changes straight away. */
@@ -278,6 +278,7 @@ export class Game {
     if (this.state !== 'title' && this.state !== 'over') return;
     const want = force ?? !this.hud.isMonstersOpen();
     if (want) this.hud.renderMonsters(this.progress, this.monster.id, this.board.isOwner);
+    if (want !== this.hud.isMonstersOpen()) this.audio.ui(want ? 'open' : 'close');
     this.hud.showMonsters(want);
   }
 
@@ -399,9 +400,10 @@ export class Game {
     const saveProgress = () => { if (!this.sim) this.progress.save(); };
     window.addEventListener('pagehide', saveProgress);
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) return;
+      if (!document.hidden) { if (this.state !== 'paused') this.audio.setPaused(false); return; }
       saveProgress();
       if (this.state === 'running') this.togglePause(true);
+      this.audio.setPaused(true);
     });
     // clicking another window mid-run would otherwise mean an unfair death
     window.addEventListener('blur', () => { if (this.state === 'running' && !this.sim) this.togglePause(true); });
@@ -501,6 +503,18 @@ export class Game {
   _bindUI() {
     const inp = this.input;
     inp.allowUi = () => this.state !== 'running' && this.state !== 'intro' && this.state !== 'dying';
+    // interface sounds: a soft tick when the mouse moves onto a button, a click when one is pressed
+    let hovered = null;
+    document.addEventListener('pointerover', (e) => {
+      const b = e.target.closest?.('button');
+      if (b === hovered) return;
+      hovered = b;
+      if (b && e.pointerType === 'mouse' && !b.classList.contains('tbtn')) this.audio.ui('hover');
+    });
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest?.('button');
+      if (b && !b.classList.contains('tbtn')) this.audio.ui('select');
+    }, true);
     inp.on('jump', () => this._onJump());
     inp.on('tap', () => this.audio.init());
     inp.on('jumpRelease', () => { if (!this.grounded && this.vy > 0) this.cutPending = true; });
@@ -647,8 +661,7 @@ export class Game {
     this.flash = 0.55;
     this.flashColor.setRGB(1, 0.18, 0.08);
     this.rig.shake(1.0);
-    this.audio.hit();
-    this.audio.setDrums(0);
+    this.audio.hit(this.monster.voice ?? 1, this.monster.sound?.roar);
     this._dustBurst(1.4, 40, 3);
     const s = Math.floor(this.score);
     this.isBest = s > this.hi;
@@ -670,7 +683,7 @@ export class Game {
       const m = unlocked[0];
       this.hud.banner('NEW MONSTER UNLOCKED', m.name.toUpperCase(), 'clear');
       this.hud.toast(m.name + ' unlocked! Pick it in Monsters (B).', 4200);
-      this.audio.charged();
+      this.audio.music?.stinger('unlock');
     }
     if (this.board.enabled && !this.sim) {
       this.board.submit(this.level.field, s, { view: this.rig.mode, stage: this.stages.number }).then((ok) => {
@@ -687,11 +700,12 @@ export class Game {
     if (want && this.state === 'running') {
       this.state = 'paused';
       this.hud.setPaused(true);
-      this.audio.setDrums(0);
       this.audio.setRotor(0);
+      this.audio.setPaused(true);
     } else if (!want && this.state === 'paused') {
       this.state = 'running';
       this.hud.setPaused(false);
+      this.audio.setPaused(false);
       this.last = performance.now();
     }
   }
@@ -700,6 +714,7 @@ export class Game {
     if (!this.board.enabled) return;
     const want = force ?? !this.hud.isBoardOpen();
     if (want && this.state === 'running') this.togglePause(true);
+    if (want !== this.hud.isBoardOpen()) this.audio.ui(want ? 'open' : 'close');
     this.hud.showBoard(want);
     if (want) this._onBoard();
   }
@@ -792,7 +807,7 @@ export class Game {
     this.charge = 0;
     this.breathT = CFG.breathTime;
     this.bossHitThisBreath = false;
-    this.audio.breath(CFG.breathTime);
+    this.audio.breath(CFG.breathTime, this.monster.sound?.breath);
     this._roar(1.1, 0.85);
     this.rig.shake(0.5);
     this.flash = 0.1;
@@ -839,6 +854,7 @@ export class Game {
     if (o.type === 'fuel' || o.type === 'tank') this._blast(o.x, o.y + 1, o.type === 'fuel' ? 1.8 : 1);
     else {
       this.audio.crunch(o.tall ? 1.6 : 0.8);
+      if (o.type === 'building') this.audio.glass();
       this.rig.shake(o.tall ? 0.4 : 0.15);
       for (let i = 0; i < (o.tall ? 26 : 10); i++) {
         const a = Math.random() * Math.PI * 2;
@@ -1006,6 +1022,24 @@ export class Game {
     }
   }
 
+  /** The score follows the game: theme by screen and biome, intensity by stage, boss and Rage. */
+  _scoreMusic(realDt) {
+    const m = this.audio.music;
+    if (!m) return;
+    const st = this.state;
+    let theme, k;
+    if (st === 'title' || st === 'loading') { theme = 'title'; k = 0; }
+    else if (st === 'over' || st === 'dying') { theme = 'over'; k = 0; }
+    else {
+      theme = this.level.biome === 'city' ? 'city' : this.level.biome === 'volcano' ? 'volcano' : 'desert';
+      const combat = ['army', 'siege', 'inferno'].includes(this.stages.key);
+      k = this.rageT > 0 ? 4 : this.boss.active || this.bossPending ? 3 : combat ? 2 : 1;
+      if (st === 'intro') k = 1;
+    }
+    m.set(theme, k);
+    m.update(realDt);
+  }
+
   _footstep(leg, fx) {
     const x = fx * this.dragon.group.scale.x;
     const z = (leg === 0 ? 0.62 : -0.62) * this.dragon.group.scale.z;
@@ -1093,6 +1127,7 @@ export class Game {
 
   _explode(o, points = CFG.killPoints) {
     this._blast(o.x, o.y + 0.8, o.type === 'tank' || o.type === 'fuel' ? 1.4 : 1);
+    if (o.type === 'building') this.audio.glass();
     this._debris(o);
     const pts = this._pts(points);
     this.score += pts;
@@ -1137,7 +1172,7 @@ export class Game {
       yaw: 0.85 * this.rig.blend,
       fire: (y, x0, y0) => {
         this.obstacles.spawnMissile(x0, y0, y, CFG.missileSpeed + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
-        this.audio.cannon();
+        this.audio.missileLaunch(x0);
         for (let i = 0; i < 8; i++) this.dust.emit(x0, y0, 0, Math.random() * 2, -1 + Math.random() * 2, (Math.random() - 0.5) * 2, 0.7, 0.4, 2, 0.5, 0.5, 0.5, 0.5, 2, 0, 0);
       },
       smoke: (x, y) => this.dust.emit(x, y, (Math.random() - 0.5), Math.random() * 2, 1 + Math.random() * 2, 0, 1.4, 1, 4, 0.12, 0.11, 0.1, 0.6, 1.5, -0.4, 0),
@@ -1165,6 +1200,7 @@ export class Game {
     this._popup(`+${pts}`, boss.x, boss.y + 1.6, 'big');
     this.hud.setBoss('', 0, boss.maxHp);
     this.hud.banner('STAGE CLEAR', 'GUNSHIP DOWN', 'clear');
+    this.audio.music?.stinger('clear');
     this.nextBossScore = Math.ceil((this.score + CFG.bossEvery) / 100) * 100;
     this.toastAfter = { t: 2.6, text: `Next gunship at ${this.nextBossScore.toLocaleString('en-US')} points` };
     this.slowT = 1.1;
@@ -1260,6 +1296,7 @@ export class Game {
           + ` · stage ${this.stages.number}`
           + (this.seedFixed || this.debug || this.sim ? ` · seed ${this.seed}` : '');
         this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
+        this.audio.music?.stinger(this.isBest ? 'best' : 'over');
         this.hud.setMenu(true);
         this.hud.resetRival();
         this.hud.setBoss('', -1, 0);
@@ -1493,12 +1530,16 @@ export class Game {
 
     // projectile trails and incoming-fire warnings
     let rotor = this.boss.active || this.boss.state === 'dying' ? 1 : 0;
+    let treads = 0;
     for (const o of this.obstacles.active) {
       if (o.type === 'shell' || o.type === 'missile') {
         this.sparks.emit(o.x + 0.4, o.y, 0, 2 + Math.random() * 2, (Math.random() - 0.5), (Math.random() - 0.5), 0.12, 0.25, 0.05, 1.6, 0.8, 0.3, 0.9, 1, 0, 0);
         if (o.type === 'missile') this.dust.emit(o.x + 0.5, o.y, 0, 1, 0.3, 0, 0.6, 0.25, 0.9, 0.55, 0.55, 0.55, 0.35, 1.5, 0.2, 1);
       } else if (o.type === 'heli' && o.x > -10 && o.x < 50) rotor = Math.max(rotor, 0.55);
+      else if (o.type === 'tank' && !o.dead && o.x > -8 && o.x < 34) treads = Math.max(treads, 1 - Math.abs(o.x - 4) / 30);
+      else if (o.type === 'ptero' && !o.cried && o.x < 40 && running) { o.cried = true; this.audio.screech(o.x); }
       else if (o.type === 'meteor' && o.fallT >= 0 && !o.landed) {
+        if (!o.cried && running) { o.cried = true; this.audio.meteorWhistle(o.x, 1); }
         const b = o.model.userData.ball.position;
         this.sparks.emit(o.x + b.x, b.y, 0, 3 + Math.random() * 3, 4 + Math.random() * 3, (Math.random() - 0.5) * 2, 0.3, 0.6, 0.1, 1.8, 0.6, 0.15, 1, 1, 0, 1);
         this.dust.emit(o.x + b.x + 0.4, b.y + 0.4, 0, 2, 2.5, 0, 1.2, 0.5, 2.2, 0.16, 0.13, 0.12, 0.55, 1.2, -0.2, 1);
@@ -1520,7 +1561,8 @@ export class Game {
     this.hud.setWarnings(warns);
     this.obstacles.night = night;
     this.audio.setRotor(running ? rotor : 0);
-    this.audio.setDrums(running ? (this.rageT > 0 ? 2 : this.boss.active ? 1 : 0) : 0);
+    this.audio.setTreads(running ? treads : 0);
+    this._scoreMusic(realDt);
 
     // world
     const near = this.rig.blend;

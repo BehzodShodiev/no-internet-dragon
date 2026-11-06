@@ -108,7 +108,8 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 - **Lighting.** A physically based (Preetham) sky drives image-based lighting, and fog is computed from the same scattering model so the horizon blends cleanly. A day/night cycle follows your score: golden hour, dusk, then a moonlit night with stars. Shadows are soft.
 - **Post-processing.** MSAA, bloom, filmic tone mapping, colour grading, vignette, film grain, subtle chromatic aberration, and heat haze along the horizon. A guard pass stops any stray NaN/Inf pixel from blacking out the frame.
 - **Military.** Tanks, attack helicopters and the tandem-rotor gunship are modelled in code from rounded boxes and swept hulls, with spinning rotors, recoiling barrels, muzzle flashes, searchlights at night, and shell and missile trails.
-- **Audio.** Everything is synthesized with WebAudio: footsteps, roars, the breath, explosions, desert wind, Chrome-style milestone beeps, crystal chimes that climb with the combo, cannon fire, rotor thump, warning beeps, a boss siren and war drums during Rage and the boss fight.
+- **Music.** An original score, generated live: a 16th-note sequencer plays a theme per world (a desert mode, a minor synth theme for the city, a heavy Phrygian one for the volcano) plus title and game-over moods. Six layers (pad, bass, drums, arpeggio, brass, lead) fade in with the action: running, the army stages, the gunship, Kaiju Rage. Stingers mark game over, a new best, a gunship down and an unlock.
+- **Audio.** Everything is synthesized with WebAudio and mixed on separate effect, music, interface and ambience buses into a compressor, a limiter and a soft clipper (an offline render test checks that nothing clips). Each world has its own reverb and ambience: desert wind, city hum and traffic, volcanic rumble and crackling lava. Every monster has its own voice and beam: the Kaiju's roar and atomic breath, Ghidorah's three staggered roars and crackling gravity beams, Mothra's high trill and shimmering scale storm. Roars and explosions duck the music. Pterodactyls screech as they come in, meteors whistle down, missiles whoosh off the gunship, windows shatter, and the menus tick and click. The sound stops while paused or in a background tab.
 
 ## Performance
 
@@ -136,7 +137,8 @@ src/
   game/CameraRig.js       2D ⇄ 3D camera blend, title orbit, shake
   game/Renderer.js        renderer, post-processing chain, quality, dynamic resolution
   game/Input.js           keyboard / pointer / touch buttons
-  game/Audio.js           synthesized sound
+  game/Audio.js           synthesized sound effects, the mix (buses, limiter, reverb), ambience and voices
+  game/Music.js           the procedural score: themes, layers by intensity, stingers
   game/HUD.js             DOM overlay: meters, combo, banners, pop-ups, warnings, boards
   entities/Dragon.js      the skinned dragon + IK + hitboxes from bone positions
   entities/Obstacles.js   cacti, boulders, flyers, tanks, projectiles, spawner, crystal patterns

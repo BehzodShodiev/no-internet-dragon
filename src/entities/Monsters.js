@@ -3,15 +3,16 @@
 // look: the same fields as a skin in Skins.js (colours, breath, build). hitX: hitbox width along x, which
 // also scales score, as for skins; score (optional) overrides that factor for monsters with a gameplay
 // edge. model: 'dragon' (default, Dragon.js with `variant`) or 'moth' (Moth.js). glide: holding jump on
-// the way down slows the fall. voice: pitch of the roar. Planned additions and their goals are in
+// the way down slows the fall. voice: pitch of the roar. sound: { roar: 'growl' | 'triple' | 'trill',
+// breath: 'atomic' | 'gravity' | 'dust' } (Audio.js). Planned additions and their goals are in
 // docs/ROADMAP.md.
 export const MONSTERS = [
   {
-    id: 'kaiju', name: 'Kaiju', variant: 'kaiju', skins: true,
+    id: 'kaiju', name: 'Kaiju', variant: 'kaiju', skins: true, sound: { roar: 'growl', breath: 'atomic' },
     note: 'The original atomic lizard, with seven film-era skins.',
   },
   {
-    id: 'ghidorah', name: 'King Ghidorah', variant: 'ghidorah',
+    id: 'ghidorah', name: 'King Ghidorah', variant: 'ghidorah', sound: { roar: 'triple', breath: 'gravity' },
     note: 'Three heads, two tails, golden wings and gravity beams. Wide build: score ×1.15.',
     goal: { stat: 'gunships', need: 5, text: 'Down 5 gunships in total' },
     look: {
@@ -21,7 +22,7 @@ export const MONSTERS = [
     },
   },
   {
-    id: 'mothra', name: 'Mothra', model: 'moth', glide: true, voice: 2.3,
+    id: 'mothra', name: 'Mothra', model: 'moth', glide: true, voice: 2.3, sound: { roar: 'trill', breath: 'dust' },
     note: 'Giant moth: hold jump on the way down to glide, let go to drop. Wing-dust beam. Gliding is an edge: score ×0.9.',
     goal: { stat: 'crystals', need: 500, text: 'Collect 500 crystals in total' },
     look: {

@@ -48,8 +48,10 @@ async function runJob(s, j) {
   const start = await s.evaluate('window.__game.time');
   for (;;) {
     await sleep(1500);
-    const st = await s.evaluate(`(() => { const g = window.__game, B = window.__bot; return { t: g.time, loops: g.stages.cycle, deaths: B.deaths, score: g.score | 0, stage: g.stages.number, gunships: g.bossesDowned, state: g.state }; })()`);
+    const st = await s.evaluate(`(() => { const g = window.__game, B = window.__bot; return { t: g.time, loops: g.stages.cycle, deaths: B.deaths, score: g.score | 0, stage: g.stages.number, gunships: g.bossesDowned, state: g.state, monster: g.monster.id, level: g.level.id, seed: g.seedBase }; })()`);
     if (!st || st.__error) return { ...j, error: 'eval ' + JSON.stringify(st) };
+    // the run must still be the one that was asked for (a page reload would silently swap it)
+    if (st.monster !== j.monster || st.level !== j.level || st.seed !== j.seed) return { ...j, error: `wrong run: ${st.monster} L${st.level} seed ${st.seed}` };
     const gameT = st.t - start;
     if (st.deaths > 0 || st.loops >= loops || gameT > maxGame) {
       const B = await s.evaluate('JSON.stringify(window.__bot)');
