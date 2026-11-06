@@ -428,6 +428,9 @@ export class Game {
     this.obstacles.onMeteor = (o) => this._meteorImpact(o);
     this.debris = new Debris(scene, tex);
     this.blasts = new Blasts(scene, this.tex.noise);
+    // volcano plumes and eruptions are drawn by Blasts (one instanced draw)
+    this.volcano.onPuff = (x, y, z, r, life, rise, heat) => this.blasts.puff(x, y, z, r, life, rise, heat);
+    this.volcano.onErupt = (x, y, z, s) => this._erupt(x, y, z, s);
     // explosions light up what's around them: one pooled light, present from load at zero (the light
     // set never changes, so no shader ever recompiles for it)
     this.blastLight = new THREE.PointLight(0xff8a3a, 0, 26, 2);
@@ -1165,6 +1168,21 @@ export class Game {
     }
   }
 
+  /** A volcano on the horizon erupts: lava bombs arc out of the crater, a boom rolls in, the ground shakes. */
+  _erupt(x, y, z, s) {
+    for (let i = 0; i < 46; i++) {
+      const a = Math.random() * Math.PI * 2, v = (10 + Math.random() * 20) * s;
+      this.sparks.emit(
+        x + (Math.random() - 0.5) * 6, y + 3 * s, z, Math.cos(a) * v * 0.6, (28 + Math.random() * 26) * s, Math.sin(a) * v * 0.4,
+        2.6 + Math.random() * 1.6, 7 * s, 3 * s, 2.6, 0.75, 0.16, 1, 0.12, 24 * s, 1
+      );
+    }
+    if (this.state === 'running') {
+      this.audio.explosion(1.6);
+      this.rig.shake(0.3);
+    }
+  }
+
   /** The dragon's forward glow: on after dark, tinted by its plates (blue, or red in Kaiju Rage). */
   _updateDragonLight(night) {
     const m = this.dragon.getMouthWorld(this._mouth);
@@ -1840,6 +1858,7 @@ export class Game {
     // Night City's flat street grid eases in and out the same way
     tu.uCity.value += ((this.level.biome === 'city' ? 1 : 0) - tu.uCity.value) * (1 - Math.exp(-realDt * 2.5));
     tu.uNight.value = night;
+    tu.uTime.value = this.time;
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
     this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);

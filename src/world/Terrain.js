@@ -33,6 +33,7 @@ export class Terrain {
       uCity: { value: 0 }, // 0 = dunes, 1 = Night City: flat ground painted as streets, sidewalks and plazas
       uNight: { value: 0 }, // street-lamp pools on the sidewalk after dark
       uLampScroll: { value: 0 }, // scroll % 4004, the same phase City's lamps use
+      uTime: { value: 0 }, // lava flow
     };
     this.material = new THREE.MeshStandardMaterial({
       map: sand.map,
@@ -203,6 +204,7 @@ export class Terrain {
         uniform float uCity;
         uniform float uNight;
         uniform float uLampScroll;
+        uniform float uTime;
         float tHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -214,6 +216,7 @@ export class Terrain {
         /* glsl */ `
         #include <map_fragment>
         float tLava = 0.0, tWet = 0.0, tPool = 0.0;
+        vec3 tLavaCol = vec3(0.0);
         {
           // break up tiling with a low-frequency lookup of the same texture
           vec2 wuv = vec2(vTW.x + uScroll, vTW.z);
@@ -233,6 +236,23 @@ export class Terrain {
           float vein = tNoise(wuv * 0.07) * 0.65 + tNoise(wuv * 0.19 + 3.7) * 0.35;
           tLava = (1.0 - smoothstep(0.0, 0.016, abs(vein - 0.5))) * smoothstep(14.0, 22.0, abs(vTW.z)) * uLava;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.02, 0.01), tLava);
+          // volcano: a river of lava winding along each side of the track (at least 6 m clear of the
+          // road), crusted plates drifting on it, and the ash glowing along its banks
+          if (uAsh > 0.001) {
+            float cx = vTW.x + uScroll;
+            float cz = vTW.z;
+            float wv = 6.2831853 / 512.0;
+            float zf = -(13.0 + 3.5 * sin(cx * wv * 3.0 + 1.0) + 1.6 * sin(cx * wv * 7.0 + 2.3));
+            float zn = 12.5 + 3.0 * sin(cx * wv * 5.0 + 2.0) + 1.4 * sin(cx * wv * 11.0 + 0.7);
+            float rd = min(abs(cz - zf), abs(cz - zn));
+            float rv = (1.0 - smoothstep(1.3, 2.0, rd)) * uAsh;
+            vec2 fp = vec2(cx * 0.18 + uTime * 0.9, cz * 0.7);
+            float crust = smoothstep(0.44, 0.62, tNoise(fp) * 0.6 + tNoise(fp * 2.3 + 5.1) * 0.4);
+            float hot = tNoise(vec2(cx * 0.07 + uTime * 0.5, cz * 0.3));
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.04, 0.02, 0.015), rv);
+            tLavaCol = mix(vec3(1.7, 0.42, 0.06), vec3(2.6, 1.15, 0.25), hot) * (1.0 - 0.9 * crust) * rv
+              + vec3(1.0, 0.25, 0.04) * exp(-max(rd - 1.6, 0.0) * 1.2) * (1.0 - rv) * uAsh * 0.45;
+          }
           // Night City: kerb and sidewalk slabs along the road, then city blocks (pale tiled plazas or dark
           // lots); a cross street every 64 m (City keeps its buildings out of them) with a zebra crossing
           // by the road; wet patches that catch the sky; lamp pools on the far sidewalk after dark
@@ -280,7 +300,7 @@ export class Terrain {
         '#include <emissivemap_fragment>',
         /* glsl */ `
         #include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3(2.0, 0.55, 0.1) * tLava;
+        totalEmissiveRadiance += vec3(2.0, 0.55, 0.1) * tLava + tLavaCol;
         totalEmissiveRadiance += vec3(1.0, 0.72, 0.42) * tPool * 0.3;
         `
       );

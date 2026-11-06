@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mergeLoose, setVertexColor } from '../gfx/geometry.js';
 import { createNoise } from '../gfx/noise.js';
 
+const CONE_Y = -18; // the cones' base height (their lower slopes hide behind the ash dunes)
 const part = (g, color, x = 0, y = 0, z = 0) => setVertexColor(g.translate(x, y, z), color);
 
 /** Molten rock: flowing noise drawn in each object's own coordinates, so it doesn't slide as it scrolls. */
@@ -119,22 +120,20 @@ export class Volcano {
     const coneMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
     const glowMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.3, 0.25), fog: false });
     const glow = new THREE.TorusGeometry(9.5, 1.6, 8, 40).rotateX(Math.PI / 2).translate(0, 62, 0);
-    this.smokeMat = new THREE.SpriteMaterial({ map: this.dot, color: 0x2a2220, transparent: true, opacity: 0.7, depthWrite: false });
     this.mountains = [];
+    // plumes and eruptions are drawn by Blasts (one instanced draw for every puff): Game sets onPuff and
+    // onErupt; each cone puffs steadily, and one erupts every 15 to 25 seconds
+    this.onPuff = null;
+    this.onErupt = null;
+    this.eruptT = 8;
     [[-120, -300, 1.2], [260, -360, 1.5], [700, -280, 1.0]].forEach(([x, z, s]) => {
       const m = new THREE.Group();
       m.add(new THREE.Mesh(g, coneMat), new THREE.Mesh(glow, glowMat));
-      const puffs = [];
-      for (let i = 0; i < 6; i++) {
-        const sp = new THREE.Sprite(this.smokeMat);
-        m.add(sp);
-        puffs.push({ sp, t: i / 6 });
-      }
       m.scale.setScalar(s);
-      m.position.set(x, -4, z);
+      m.position.set(x, CONE_Y, z); // sunk so the crater and its plume sit inside the 2D frame
       m.visible = false;
       scene.add(m);
-      this.mountains.push({ m, puffs });
+      this.mountains.push({ m, s, puffT: Math.random() * 0.4, burst: 0 });
     });
   }
 
@@ -147,16 +146,35 @@ export class Volcano {
     this.uniforms.uTime.value = time;
     this.hotMat.emissiveIntensity = 5 + 1.5 * Math.sin(time * 9);
     if (!this.active) return;
-    for (const { m, puffs } of this.mountains) {
+    for (const v of this.mountains) {
+      const m = v.m;
       m.position.x -= speed * dt;
       if (m.position.x < -560) m.position.x += 1500;
-      for (const p of puffs) {
-        p.t = (p.t + dt * 0.05) % 1; // a slow, endless column of smoke
-        const s = 18 + p.t * 60;
-        p.sp.position.set(Math.sin(p.t * 5 + m.position.z) * 8, 66 + p.t * 120, 0);
-        p.sp.scale.set(s, s, 1);
+      const cy = CONE_Y + 62 * v.s; // the crater rim
+      // a steady column: glowing at the crater, smoke above
+      v.puffT -= dt;
+      if (v.puffT <= 0 && this.onPuff) {
+        v.puffT = 0.42;
+        this.onPuff(m.position.x + (Math.random() - 0.5) * 6 * v.s, cy + 2 * v.s, m.position.z, (9 + Math.random() * 5) * v.s, 6.5, 9 * v.s, 0.3);
+      }
+      // an eruption: a burst of white-hot puffs for a second and a half
+      if (v.burst > 0) {
+        v.burst -= dt;
+        if (this.onPuff && Math.random() < dt * 14) {
+          this.onPuff(m.position.x + (Math.random() - 0.5) * 8 * v.s, cy + 4 * v.s, m.position.z + (Math.random() - 0.5) * 6, (8 + Math.random() * 8) * v.s, 3.2, 26 * v.s, 0);
+        }
       }
     }
-    this.smokeMat.opacity = 0.65;
+    this.eruptT -= dt;
+    if (this.eruptT <= 0) {
+      this.eruptT = 15 + Math.random() * 10;
+      // the cone nearest the middle of the view
+      let best = null;
+      for (const v of this.mountains) if (!best || Math.abs(v.m.position.x - 120) < Math.abs(best.m.position.x - 120)) best = v;
+      if (best && Math.abs(best.m.position.x - 120) < 420) {
+        best.burst = 1.6;
+        this.onErupt?.(best.m.position.x, CONE_Y + 62 * best.s, best.m.position.z, best.s);
+      }
+    }
   }
 }

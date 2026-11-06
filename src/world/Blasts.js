@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 
 const FIRE_MAX = 10;
+const PLUME_MAX = 64; // volcano plumes: big, slow puffs with the fireball's shader
 const RING_MAX = 10;
 const SCORCH_MAX = 48;
 const EMBER = new THREE.Color(1.0, 0.38, 0.08);
@@ -20,13 +21,15 @@ export class Blasts {
     fireGeo.setAttribute('aLife', this.fireLife);
     fireGeo.setAttribute('aSeed', this.fireSeed);
     const fireMat = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 }, uSmoke: { value: new THREE.Color(0.2, 0.18, 0.16) }, uNoise: { value: noiseTex } },
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uTime: { value: 0 }, uSmoke: { value: new THREE.Color(0.2, 0.18, 0.16) }, uNoise: { value: null } }]),
       vertexShader: /* glsl */ `
+        #include <fog_pars_vertex>
         attribute float aLife; attribute float aSeed;
         uniform float uTime;
-        varying float vLife; varying vec3 vN; varying vec3 vP; varying vec3 vO;
+        varying float vLife; varying vec3 vN; varying vec3 vP; varying vec3 vO; varying float vAsh;
         void main() {
           vLife = aLife;
+          vAsh = step(50.0, aSeed); // plume puffs (seed + 100): dark volcanic ash, not lit smoke
           vec3 p = position;
           // lumpy, boiling surface
           float w = sin(p.x * 3.1 + uTime * 7.0 + aSeed * 9.0) * sin(p.y * 2.7 - uTime * 5.0) * sin(p.z * 3.3 + aSeed * 4.0);
@@ -37,10 +40,14 @@ export class Blasts {
           vec4 mv = modelViewMatrix * wp;
           vP = mv.xyz;
           gl_Position = projectionMatrix * mv;
+          #ifdef USE_FOG
+            vFogDepth = -mv.z;
+          #endif
         }`,
       fragmentShader: /* glsl */ `
+        #include <fog_pars_fragment>
         uniform float uTime; uniform vec3 uSmoke; uniform sampler2D uNoise;
-        varying float vLife; varying vec3 vN; varying vec3 vP; varying vec3 vO;
+        varying float vLife; varying vec3 vN; varying vec3 vP; varying vec3 vO; varying float vAsh;
         void main() {
           float facing = clamp(abs(dot(normalize(vN), normalize(-vP))), 1e-4, 1.0);
           // turbulence: the baked fbm on two crossing planes, the second one churning upward
@@ -48,7 +55,7 @@ export class Blasts {
           float core = pow(facing, 1.4);
           // temperature: white at a young core, through yellow, orange and red, to black smoke
           float heat = clamp(core * 1.3 - vLife * 1.25 + (n - 0.5) * 1.1, 0.0, 1.0);
-          vec3 col = mix(uSmoke * (0.6 + 0.8 * n), vec3(0.9, 0.12, 0.02), smoothstep(0.0, 0.25, heat));
+          vec3 col = mix(uSmoke * (0.6 + 0.8 * n) * (1.0 - 0.7 * vAsh), vec3(0.9, 0.12, 0.02), smoothstep(0.0, 0.25, heat));
           col = mix(col, vec3(3.2, 1.2, 0.25), smoothstep(0.2, 0.55, heat));
           col = mix(col, vec3(4.5, 3.6, 2.2), smoothstep(0.6, 1.0, heat));
           // ragged, soft silhouette; smoke breaks into lumps; everything thins out at the end of its life
@@ -56,16 +63,42 @@ export class Blasts {
           float edge = smoothstep(0.0, 0.7, facing + (n - 0.5) * 0.8);
           float lumps = smoothstep(0.3, 0.75, n + 0.3 * facing);
           float cov = edge * mix(1.0, lumps, smoke) * (1.0 - smoothstep(0.55, 1.0, vLife));
-          gl_FragColor = vec4(col * cov, cov * smoke * 0.8);
+          vec3 rgb = col * cov;
+          float a = cov * smoke * 0.8;
+          // fog, premultiplied: glow fades out, smoke takes the fog's colour
+          #ifdef USE_FOG
+            #ifdef FOG_EXP2
+              float fogF = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
+            #else
+              float fogF = smoothstep(fogNear, fogFar, vFogDepth);
+            #endif
+            rgb = mix(rgb, fogColor * a, fogF * (1.0 - 0.45 * vAsh)); // ash columns read from far away
+          #endif
+          gl_FragColor = vec4(rgb, a);
         }`,
-      transparent: true, depthWrite: false, premultipliedAlpha: true, fog: false,
+      transparent: true, depthWrite: false, premultipliedAlpha: true, fog: true,
     });
+    fireMat.uniforms.uNoise.value = noiseTex;
+    this.fireMat = fireMat;
     this.fire = new THREE.InstancedMesh(fireGeo, fireMat, FIRE_MAX);
     this.fire.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.fire.frustumCulled = false;
     this.fire.count = 0;
     this.fire.renderOrder = 3;
     this.fires = [];
+
+    // ---- plume puffs (volcanoes): same shader, own instances
+    const plumeGeo = new THREE.IcosahedronGeometry(1, 3);
+    this.plumeLife = new THREE.InstancedBufferAttribute(new Float32Array(PLUME_MAX), 1);
+    this.plumeSeed = new THREE.InstancedBufferAttribute(new Float32Array(PLUME_MAX), 1);
+    plumeGeo.setAttribute('aLife', this.plumeLife);
+    plumeGeo.setAttribute('aSeed', this.plumeSeed);
+    this.plume = new THREE.InstancedMesh(plumeGeo, fireMat, PLUME_MAX);
+    this.plume.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.plume.frustumCulled = false;
+    this.plume.count = 0;
+    this.plume.renderOrder = 1;
+    this.puffs = [];
 
     // ---- shockwave rings on the ground
     const ringGeo = new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2);
@@ -141,7 +174,7 @@ export class Blasts {
     this._q = new THREE.Quaternion();
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
-    scene.add(this.fire, this.ring, this.scorch);
+    scene.add(this.fire, this.ring, this.scorch, this.plume);
   }
 
   /** An explosion at (x, y): size ~0.5..2. ground: leave a ring and a scorch mark. scroll: how much of the
@@ -153,6 +186,13 @@ export class Blasts {
     if (this.rings.length >= RING_MAX) this.rings.shift();
     this.rings.push({ x, z: 0, t: 0, life: 0.45 + 0.1 * size, r: 4.5 * size });
     this.mark(x, (Math.random() - 0.5) * 0.6, 1.6 + 1.4 * size, EMBER);
+  }
+
+  /** A plume puff at (x, y, z): radius r, rising `rise` units a second for `life` seconds. heat0 0..1 starts
+   *  it partway through its life (0 = white hot, about 0.4 = already smoke). It rides with the ground. */
+  puff(x, y, z, r, life, rise, heat0 = 0) {
+    if (this.puffs.length >= PLUME_MAX) this.puffs.shift();
+    this.puffs.push({ x, y, z, r, life, rise, l0: heat0, t: 0, seed: 100 + Math.random() * 10 });
   }
 
   /** A scorch mark on the ground at (x, z), s units across, glowing in `glow` (a THREE.Color) as it cools. */
@@ -186,6 +226,28 @@ export class Blasts {
     }
     this.fire.count = k;
     this.fire.instanceMatrix.needsUpdate = this.fireLife.needsUpdate = this.fireSeed.needsUpdate = true;
+
+    k = 0;
+    for (let i = this.puffs.length - 1; i >= 0; i--) {
+      const f = this.puffs[i];
+      f.t += dt;
+      if (f.t >= f.life) { this.puffs.splice(i, 1); continue; }
+      const lf = f.l0 + (1 - f.l0) * (f.t / f.life);
+      f.x -= groundSpeed * dt;
+      f.y += f.rise * dt * (1 - 0.5 * lf);
+      f.z -= dt * f.r * 0.05; // drifting downwind
+    }
+    for (const f of this.puffs) {
+      const lf = f.l0 + (1 - f.l0) * (f.t / f.life);
+      const r = f.r * (0.6 + 1.2 * lf);
+      m.compose(p.set(f.x, f.y, f.z), q.identity(), sc.set(r, r * 0.9, r));
+      this.plume.setMatrixAt(k, m);
+      this.plumeLife.array[k] = lf;
+      this.plumeSeed.array[k] = f.seed;
+      k++;
+    }
+    this.plume.count = k;
+    this.plume.instanceMatrix.needsUpdate = this.plumeLife.needsUpdate = this.plumeSeed.needsUpdate = true;
 
     k = 0;
     for (let i = this.rings.length - 1; i >= 0; i--) {
@@ -226,7 +288,7 @@ export class Blasts {
   }
 
   clear() {
-    this.fires.length = this.rings.length = this.scorches.length = 0;
-    this.fire.count = this.ring.count = this.scorch.count = 0;
+    this.fires.length = this.rings.length = this.scorches.length = this.puffs.length = 0;
+    this.fire.count = this.ring.count = this.scorch.count = this.plume.count = 0;
   }
 }

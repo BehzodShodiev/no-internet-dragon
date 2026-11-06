@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { mulberry32, createNoise } from '../gfx/noise.js';
 import { buildCactus, buildRock } from '../entities/Obstacles.js';
 import { TERRAIN_PERIOD } from './Terrain.js';
+import { buildSkeleton, buildRuins } from './Landmarks.js';
 
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -130,6 +131,17 @@ export class Scenery {
         zRanges: i % 2 ? [[-420, -260]] : [[-400, -250], [230, 320]], scale: [0.75, 1.25], shadow: false, sink: 4, yaw: true,
       });
     });
+    // --- landmarks on a tile twice the terrain period, so they don't come round with the dunes:
+    // a giant kaiju skeleton half-buried in the sand, and a ruined colonnade
+    this.landmarkMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, metalness: 0, normalMap: tex.rock.normalMap });
+    this._layer({
+      kind: 'landmark', geometry: buildSkeleton(), material: this.landmarkMat, L: P * 2, x0: -120, count: 2, rand,
+      zRanges: [[-78, -40], [42, 72]], scale: [0.9, 1.2], shadow: false, sink: 0.35, yaw: true,
+    });
+    this._layer({
+      kind: 'landmark', geometry: buildRuins(), material: this.landmarkMat, L: P * 2, x0: -60, count: 2, rand,
+      zRanges: [[-72, -38], [40, 80]], scale: [0.9, 1.15], shadow: false, sink: 0.2, yaw: true,
+    });
   }
 
   _layer({ kind = 'rock', geometry, material, L, x0, count, rand, zRanges, scale, shadow, sink = 0, yaw = false }) {
@@ -186,6 +198,7 @@ export class Scenery {
     }
     this.rockMat.color.set(name === 'volcano' ? 0x8a6c62 : 0xffffff);
     this.mesaMat.color.set(name === 'volcano' ? 0x5a3028 : 0xffffff);
+    this.landmarkMat.color.set(name === 'volcano' ? 0x5c4a40 : 0xffffff); // scorched bone and stone
   }
 
   update(scroll, near) {
