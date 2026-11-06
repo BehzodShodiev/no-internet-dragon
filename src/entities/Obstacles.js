@@ -1,6 +1,7 @@
 // Obstacles: procedural saguaro cacti, boulders and pterodactyls, pooled and spawned Chrome-dino style.
 import * as THREE from 'three';
-import { sweep, blob, mergeLoose } from '../gfx/geometry.js';
+import { sweep, blob, mergeLoose, setVertexColor } from '../gfx/geometry.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mulberry32, createNoise, hash32 } from '../gfx/noise.js';
 import { Military } from './Military.js';
 
@@ -216,7 +217,7 @@ const FLYERS = ['ptero', 'heli', 'shell', 'missile'];
 export const isFlyer = (type) => FLYERS.includes(type);
 // What the smash does to each type: points when it breaks, 0 = too solid (jump it), 'reflect' = batted back.
 export const SMASH = {
-  cactusS: 10, cactusL: 10, ptero: 20, heli: 25, tank: 30, car: 20, tower: 40, fuel: 50, building: 50, pillar: 40,
+  cactusS: 10, cactusL: 10, ptero: 20, heli: 25, tank: 30, car: 20, tower: 40, fuel: 50, building: 50, pillar: 40, boulder: 15, jeep: 25,
   rock: 0, hedgehog: 0, lava: 0, meteor: 0, shell: 'reflect', missile: 'reflect',
 };
 // Too tall to jump: smash it or burn it.
@@ -227,6 +228,7 @@ export const SILENT = { lava: true, meteor: true };
 // the tips and the autopilot all read this, so a new type can't be added without saying how to beat it.
 export const RESPONSE = {
   cactusS: 'jump', cactusL: 'jump', rock: 'jump', hedgehog: 'jump', lava: 'jump', meteor: 'jump', car: 'jump', tank: 'jump',
+  boulder: 'jump', jeep: 'jump', // chargers: they come at you faster than the ground scrolls
   tower: 'smash', fuel: 'smash', building: 'smash', pillar: 'smash',
   ptero: 'height', heli: 'height', shell: 'height', missile: 'height',
 };
@@ -240,12 +242,47 @@ export function respond(o) {
 // Spawn weights per stage: [type, weight, from loop] (the desert keeps Chrome's original table in
 // _pickType). Rows with a loop number only join from that loop on, so every loop adds threats.
 const TABLES = {
-  army: [['tank', 22], ['heli', 20], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4], ['tower', 8, 1], ['tank', 8, 2]],
+  army: [['tank', 22], ['heli', 20], ['jeep', 12], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4], ['tower', 8, 1], ['tank', 8, 2], ['jeep', 6, 1]],
   city: [['car', 30], ['building', 30], ['heli', 18], ['hedgehog', 14], ['tank', 12, 1]],
   siege: [['building', 22], ['tank', 20], ['heli', 18], ['car', 16], ['hedgehog', 12], ['fuel', 6], ['building', 8, 1]],
-  ashlands: [['lava', 22], ['rock', 16], ['meteor', 14], ['ptero', 18], ['pillar', 14], ['meteor', 10, 1]],
-  inferno: [['tank', 16], ['heli', 16], ['lava', 14], ['meteor', 12], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6], ['pillar', 6, 1]],
+  ashlands: [['lava', 22], ['rock', 16], ['boulder', 10], ['meteor', 14], ['ptero', 18], ['pillar', 14], ['meteor', 10, 1], ['boulder', 6, 1]],
+  inferno: [['tank', 16], ['heli', 16], ['jeep', 8], ['lava', 14], ['meteor', 12], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6], ['pillar', 6, 1]],
 };
+
+/** A rolling boulder: a lumpy stone ball, radius about 0.8 (the jitter is keyed on position, so the faces stay closed). */
+function buildBoulder() {
+  const g = new THREE.IcosahedronGeometry(0.8, 2);
+  const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const k = 0.9 + 0.1 * Math.sin(x * 7.1 + y * 5.3) * Math.cos(z * 6.7 - x * 2.1) + 0.05 * Math.sin(y * 13.0 + z * 11.0);
+    p.setXYZ(i, x * k, y * k * 0.94, z * k);
+  }
+  g.computeVertexNormals();
+  return setVertexColor(g, 0xa47c5c); // the rock material multiplies its texture by vertex colour
+}
+
+/** An army jeep, nose toward -x: body in olive drab, roll bar and gun, wheels; headlights separately (they glow). */
+function buildJeep() {
+  const part = (g, c, x, y, z) => setVertexColor(g.translate(x, y, z), c);
+  const OD = 0x5b6236, DARK = 0x2b2f22, TYRE = 0x1b1b1b;
+  const parts = [
+    part(new RoundedBoxGeometry(2.6, 0.55, 1.5, 2, 0.1), OD, 0, 0.78, 0),
+    part(new THREE.BoxGeometry(0.95, 0.24, 1.42), OD, -0.82, 1.15, 0), // hood
+    part(new THREE.BoxGeometry(1.15, 0.42, 1.5), OD, 0.68, 1.22, 0), // rear tub
+    part(new THREE.BoxGeometry(0.08, 0.52, 1.38), DARK, -0.32, 1.5, 0), // windshield frame
+    part(new THREE.BoxGeometry(0.4, 0.06, 1.6), DARK, -1.25, 0.62, 0), // bumper
+    part(new THREE.BoxGeometry(0.08, 0.55, 0.08), DARK, 0.95, 1.7, -0.66), // roll bar
+    part(new THREE.BoxGeometry(0.08, 0.55, 0.08), DARK, 0.95, 1.7, 0.66),
+    part(new THREE.BoxGeometry(0.08, 0.08, 1.4), DARK, 0.95, 1.96, 0),
+    part(new THREE.BoxGeometry(0.34, 0.2, 0.2), DARK, 0.6, 1.98, 0), // mounted gun
+    part(new THREE.CylinderGeometry(0.045, 0.045, 1.0, 6).rotateZ(Math.PI / 2), DARK, 0.0, 2.0, 0),
+    part(new THREE.CylinderGeometry(0.38, 0.38, 0.22, 14).rotateZ(Math.PI / 2), TYRE, 1.38, 1.0, 0), // spare
+  ];
+  for (const x of [-0.85, 0.85]) for (const z of [-0.74, 0.74]) parts.push(part(new THREE.CylinderGeometry(0.42, 0.42, 0.32, 14).rotateX(Math.PI / 2), TYRE, x, 0.42, z));
+  const lights = mergeLoose([0.5, -0.5].map((z) => part(new THREE.BoxGeometry(0.06, 0.14, 0.24), 0xfff1cf, -1.31, 0.95, z)));
+  return { body: mergeLoose(parts), lights };
+}
 
 export class Obstacles {
   constructor(scene, tex) {
@@ -255,7 +292,7 @@ export class Obstacles {
     this.wrecks = []; // collapsing structures (see COLLAPSE)
     this.pools = {
       cactusS: [], cactusL: [], rock: [], ptero: [], tank: [], heli: [], shell: [], missile: [],
-      tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], pillar: [],
+      tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], pillar: [], boulder: [], jeep: [],
     };
     this.city = null; // set by the game: builds the city's buildings and cars
     this.volcano = null; // set by the game: builds lava pools, meteors and basalt pillars
@@ -407,6 +444,46 @@ export class Obstacles {
     o.boxes.push([-w / 2, 0, w / 2, h]);
     o.width = w;
     o.vx = 0;
+    return o;
+  }
+
+  _spawnBoulder(speed) {
+    const o = this._acquire('boulder');
+    if (!o.parts) {
+      this.boulderGeo ||= buildBoulder();
+      const m = new THREE.Mesh(this.boulderGeo, this.rockMat);
+      m.castShadow = m.receiveShadow = true;
+      o.parts = [m];
+      o.group.add(m);
+    }
+    o.r = 0.78;
+    o.parts[0].position.y = o.r;
+    o.parts[0].rotation.order = 'ZYX'; // rolls about the world z axis whatever its starting tumble
+    o.parts[0].rotation.set(this.rand() * 6.28, 0, 0);
+    o.boxes.length = 0;
+    o.boxes.push([-0.68, 0, 0.68, 1.45]);
+    o.width = 1.6;
+    o.vx = 2.5 + this.rand() * 2 + (speed > 18 ? 1 : 0);
+    return o;
+  }
+
+  _spawnJeep(speed) {
+    const o = this._acquire('jeep');
+    if (!o.parts) {
+      if (!this.jeepGeo) {
+        this.jeepGeo = buildJeep();
+        this.jeepMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.2 });
+        this.jeepLightMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(3, 3, 3) });
+      }
+      const body = new THREE.Mesh(this.jeepGeo.body, this.jeepMat);
+      body.castShadow = true;
+      o.parts = [body, new THREE.Mesh(this.jeepGeo.lights, this.jeepLightMat)];
+      o.group.add(...o.parts);
+    }
+    o.boxes.length = 0;
+    o.boxes.push([-1.3, 0, 1.3, 1.3], [0.45, 1.3, 1.05, 1.85]);
+    o.width = 2.7;
+    o.vx = 3.5 + this.rand() * 2.5 + (speed > 18 ? 1 : 0);
     return o;
   }
 
@@ -668,6 +745,10 @@ export class Obstacles {
       o.group.position.set(o.x, o.y + (o.z0 && (o.type === 'heli' || o.type === 'ptero') ? 3 * smooth(50, 110, o.x) * hard : 0), o.z0 ? o.z0 * smooth(50, 110, o.x) * hard : 0);
       // 3D: things rise out of the ground far down the track instead of popping into view (2D never sees x > 25)
       o.group.scale.y = hard > 0 && o.x > 96 ? Math.max(0.001, 1 - hard * (1 - smooth(122, 100, o.x))) : 1;
+      if (o.type === 'boulder') {
+        o.parts[0].rotation.z += ((speed + o.vx) * dt) / o.r; // rolling at you
+        o.parts[0].position.y = o.r + Math.abs(Math.sin(o.t * 9)) * 0.06;
+      } else if (o.type === 'jeep') o.group.rotation.z = Math.sin(o.t * 23) * 0.012; // bouncing over the sand
       if (o.type === 'ptero') this._animatePtero(o);
       else if (o.type === 'heli') this._animateHeli(o);
       else if (o.type === 'tank') this._updateTank(o, dt, speed);
@@ -729,6 +810,7 @@ export class Obstacles {
     if (this.cycle >= 2 && r > 0.87 && r <= 0.93 && avoid !== 'tank') return 'tank';
     const pteroOk = dist > 250 - 130 * hard;
     if (pteroOk && r < 0.2 + 0.1 * hard) return 'ptero';
+    if (r >= 0.8 && r < (this.cycle >= 1 ? 0.87 : 0.835) && avoid !== 'boulder') return 'boulder';
     if (r < 0.5) return 'cactusS';
     if (r < 0.84) return 'cactusL';
     return 'rock';
@@ -773,6 +855,8 @@ export class Obstacles {
     else if (type === 'lava') o = this._spawnLava();
     else if (type === 'meteor') o = this._spawnMeteor();
     else if (type === 'pillar') o = this._spawnPillar();
+    else if (type === 'boulder') o = this._spawnBoulder(speed);
+    else if (type === 'jeep') o = this._spawnJeep(speed);
     else {
       const maxCount = speed < 13 ? 1 : speed < 17 ? 2 : 3;
       o = this._spawnCactus(type, 1 + Math.floor(this.rand() * maxCount));
@@ -783,12 +867,12 @@ export class Obstacles {
     this.firstSpawnX = null;
     // 3D: traffic, tanks and flyers can come in from the side; they lock onto the track by x = 50, long
     // before they matter, and 2D never sees the offset. Anything that will fire stays on the track.
-    if (!o.shooter && (type === 'car' || type === 'tank' || type === 'heli' || type === 'ptero') && this.rand() < 0.55) {
-      o.z0 = (this.rand() < 0.5 ? -1 : 1) * (type === 'car' ? 10 : type === 'tank' ? 14 : 18);
+    if (!o.shooter && (type === 'car' || type === 'tank' || type === 'heli' || type === 'ptero' || type === 'jeep') && this.rand() < 0.55) {
+      o.z0 = (this.rand() < 0.5 ? -1 : 1) * (type === 'car' || type === 'jeep' ? 10 : type === 'tank' ? 14 : 18);
     }
-    // Flyers move faster than the ground scrolls and would eat into the gap behind the previous
-    // obstacle on the way in; push them back by that amount plus time to land and duck.
-    if (flyer) o.x += o.vx * (SPAWN_X / Math.max(1, speed)) + speed * 0.3;
+    // Flyers and chargers move faster than the ground scrolls and would eat into the gap behind the
+    // previous obstacle on the way in; push them back by that amount plus time to land and duck.
+    if (flyer || type === 'boulder' || type === 'jeep') o.x += o.vx * (SPAWN_X / Math.max(1, speed)) + speed * 0.3;
     o.group.position.set(o.x, o.y, 0);
     this.active.push(o);
     this.spawnIdx++;
@@ -801,7 +885,8 @@ export class Obstacles {
     const minGap = (air + 3.5 - 1.5 * hard + speed * 0.15) * tight + o.width;
     const maxGap = minGap * (1.55 - 0.35 * hard) + 6 - 3 * hard;
     this.nextGap = minGap + this.rand() * (maxGap - minGap);
-    if (!flyer) this._layCrystals(o, speed);
+    // crystal arcs ride with the ground; a charger would outrun its own and break the combo, so it gets none
+    if (!flyer && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed);
   }
 
   /** Lays one crystal pattern on or after a ground obstacle, shaped by the dragon's real jump. */

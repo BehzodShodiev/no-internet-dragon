@@ -527,6 +527,7 @@ export class Game {
       tank: o._spawnTank(12, true), heli: o._spawnHeli(12), shell: o.spawnShell(0, 1), missile: o.spawnMissile(0, 1, 1, 10, 0),
       tower: o._spawnStructure('tower'), fuel: o._spawnStructure('fuel'), hedgehog: o._spawnStructure('hedgehog'), building: o._spawnBuilding(),
       car: o._spawnCar(), lava: o._spawnLava(), meteor: o._spawnMeteor(), pillar: o._spawnPillar(),
+      boulder: o._spawnBoulder(12), jeep: o._spawnJeep(12),
     };
     const unwarmed = Object.keys(o.pools).filter((k) => !T[k]);
     if (unwarmed.length) console.warn('prewarm: no sample for', unwarmed.join(', '), '(its shaders will compile mid-run)');
@@ -1006,7 +1007,7 @@ export class Game {
     this.rig.punch(perfect ? 1 : 0.5);
     this._haptic(perfect ? 25 : 14);
     this._debris(o);
-    if (o.type === 'fuel' || o.type === 'tank') this._blast(o.x, o.y + 1, o.type === 'fuel' ? 1.8 : 1);
+    if (o.type === 'fuel' || o.type === 'tank' || o.type === 'jeep') this._blast(o.x, o.y + 1, o.type === 'fuel' ? 1.8 : 1);
     else {
       this.audio.crunch(o.tall ? 1.6 : 0.8);
       if (o.type === 'building') this.audio.glass();
@@ -1025,6 +1026,7 @@ export class Game {
       cactusS: [0x4f7a3a, 8, 0.22], cactusL: [0x4f7a3a, 12, 0.26], tank: [0x6f6448, 16, 0.32], heli: [0x56603f, 12, 0.26],
       ptero: [0x6b4a36, 8, 0.2], tower: [0x7a5a3c, 18, 0.3], fuel: [0xd0cbbd, 16, 0.34], building: [0xc9bba4, 28, 0.45],
       car: [0x8a8f96, 12, 0.26], rock: [0x8a5f45, 12, 0.3], hedgehog: [0x55595e, 6, 0.2], shell: [0x553322, 3, 0.1], missile: [0xbbbbbb, 4, 0.12],
+      boulder: [0x8a5f45, 14, 0.32], jeep: [0x5b6236, 14, 0.28],
     };
     const [c, n, s] = DEB[o.type] || [0x888888, 8, 0.25];
     const h = o.tall ? (o.type === 'building' ? 4.2 : 3.5) : 1.2;
@@ -1364,7 +1366,7 @@ export class Game {
     this.crystals.release(o.uid);
     // structures stay standing while they collapse: the fireball bursts on the face toward the monster
     const front = o.type === 'building' || o.type === 'tower' ? o.width * 0.5 : 0;
-    this._blast(o.x - front, o.y + 0.8 + front * 0.3, o.type === 'tank' || o.type === 'fuel' ? 1.4 : 1, front ? 1 : 0.6);
+    this._blast(o.x - front, o.y + 0.8 + front * 0.3, o.type === 'tank' || o.type === 'fuel' || o.type === 'jeep' ? 1.4 : 1, front ? 1 : 0.6);
     if (o.type === 'building') this.audio.glass();
     this._debris(o);
     // structures collapse into the ground (Obstacles wrecks): a cloud of dust rolls out from the base
@@ -1889,6 +1891,15 @@ export class Game {
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
     this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);
+    // chargers kick up a trail of dust, so you can see them coming in fast
+    if (this.state === 'running') {
+      for (const o of this.obstacles.active) {
+        if ((o.type !== 'boulder' && o.type !== 'jeep') || o.dead || o.x > 90 || Math.random() > dt * 22) continue;
+        const ash = this.level.biome === 'volcano';
+        this.dust.emit(o.x + o.width * 0.45, 0.25, o.group.position.z + (Math.random() - 0.5) * 1.2, 2 + Math.random() * 3, 0.6 + Math.random(), (Math.random() - 0.5),
+          0.8 + Math.random() * 0.5, 0.5, 1.9, ash ? 0.3 : 0.62, ash ? 0.24 : 0.54, ash ? 0.22 : 0.42, 0.5, 2, 0.2, 1);
+      }
+    }
     // supply drops: run through a crate, smash it or burn it to open it
     this.supply.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.state === 'running', this.obstacles.active, this.time);
     const drop = this.supply.drop;
