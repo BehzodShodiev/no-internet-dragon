@@ -1,10 +1,9 @@
 // WebGL renderer + post-processing chain + quality presets + dynamic resolution scaling.
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 export const QUALITY = {
   low: { pr: 1.0, msaa: 0, shadow: 1024, soft: false, bloom: false, terrain: 200, density: 0.4 },
@@ -30,9 +29,11 @@ const SanitizeShader = {
     }`,
 };
 
+// The last pass: ACES tone mapping and sRGB output (what OutputPass did) merged with the grade, in one draw.
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null },
+    toneMappingExposure: { value: 1 },
     uTime: { value: 0 },
     uRes: { value: new THREE.Vector2(1, 1) },
     uVignette: { value: 0.32 },
@@ -45,9 +46,18 @@ const GradeShader = {
     uSat: { value: 1.06 },
   },
   vertexShader: /* glsl */ `
+    precision highp float;
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+    attribute vec3 position;
+    attribute vec2 uv;
     varying vec2 vUv;
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */ `
+    precision highp float;
+    #define ACES_FILMIC_TONE_MAPPING
+    #include <tonemapping_pars_fragment>
+    #include <colorspace_pars_fragment>
     uniform sampler2D tDiffuse;
     uniform float uTime, uVignette, uGrain, uCA, uFlash, uSat, uHaze, uHorizon;
     uniform vec2 uRes;
@@ -68,6 +78,7 @@ const GradeShader = {
       col.r = texture2D(tDiffuse, uv - dc * ca).r;
       col.g = texture2D(tDiffuse, uv).g;
       col.b = texture2D(tDiffuse, uv + dc * ca).b;
+      col = sRGBTransferOETF(vec4(ACESFilmicToneMapping(col), 1.0)).rgb;
       float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(vec3(lum), col, uSat);
       col = mix(col, col * col * (3.0 - 2.0 * col), 0.12);
@@ -78,6 +89,41 @@ const GradeShader = {
       gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
     }`,
 };
+
+/**
+ * Renders the scene into its own multisampled HDR target, then resolves and sanitizes it into the
+ * composer's chain. Only this target is multisampled: bloom and the final pass work on plain targets,
+ * which saves a resolve and most of the bandwidth of every later pass.
+ */
+class ScenePass extends Pass {
+  constructor(scene, camera, samples) {
+    super();
+    this.scene = scene;
+    this.camera = camera;
+    this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples });
+    this.quad = new FullScreenQuad(new THREE.ShaderMaterial(SanitizeShader));
+    this.needsSwap = true;
+  }
+
+  setSize(w, h) {
+    this.target.setSize(w, h);
+  }
+
+  render(renderer, writeBuffer) {
+    renderer.setRenderTarget(this.target);
+    renderer.clear();
+    renderer.render(this.scene, this.camera);
+    this.quad.material.uniforms.tDiffuse.value = this.target.texture;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this.quad.render(renderer);
+  }
+
+  dispose() {
+    this.target.dispose();
+    this.quad.material.dispose();
+    this.quad.dispose();
+  }
+}
 
 export class Renderer {
   constructor(canvas) {
@@ -95,7 +141,15 @@ export class Renderer {
     this.frameTimes = [];
     this.goodTime = 0;
     this.evalTimer = 0;
-    this.onQualityDrop = null;
+    this.vsyncMs = Infinity; // fastest steady frame interval seen: the display's (or browser's) cadence
+    this.topPreset = null; // the preset Auto started at, to climb back to
+    this.onPreset = null; // Auto wants another preset: the game applies it between runs
+    // GPU time per frame (EXT_disjoint_timer_query_webgl2, where the browser exposes it)
+    this.gl = r.getContext();
+    this.timerExt = this.gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    this.gpuPending = [];
+    this.gpuTimes = []; // recent GPU frame times (ms), for Auto
+    this.gpuNew = []; // results since the last read, for the ?perf monitor
   }
 
   setup(scene, camera, light) {
@@ -107,23 +161,23 @@ export class Renderer {
 
   _buildComposer() {
     if (this.composer) {
+      // a rebuild (quality change) frees the whole old chain
       this.composer.renderTarget1.dispose();
       this.composer.renderTarget2.dispose();
+      this.scenePass.dispose();
+      this.bloom.dispose();
+      this.grade.material.dispose();
     }
     const q = this.quality;
     const size = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), {
-      type: THREE.HalfFloatType,
-      samples: q.msaa,
-    });
+    const rt = new THREE.WebGLRenderTarget(Math.max(1, size.x), Math.max(1, size.y), { type: THREE.HalfFloatType, depthBuffer: false });
     const composer = new EffectComposer(this.renderer, rt);
-    composer.addPass(new RenderPass(this.scene, this.camera));
-    composer.addPass(new ShaderPass(SanitizeShader));
+    this.scenePass = new ScenePass(this.scene, this.camera, q.msaa);
+    composer.addPass(this.scenePass);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x / 2, size.y / 2), 0.42, 0.5, 1.7);
     this.bloom.enabled = q.bloom;
     composer.addPass(this.bloom);
-    composer.addPass(new OutputPass());
-    this.grade = new ShaderPass(GradeShader);
+    this.grade = new ShaderPass(new THREE.RawShaderMaterial(GradeShader));
     composer.addPass(this.grade);
     this.composer = composer;
     this.resize();
@@ -133,7 +187,14 @@ export class Renderer {
     this.qualityName = name;
     this.quality = QUALITY[name];
     const q = this.quality;
-    this.renderer.shadowMap.type = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    // The shadow filter is chosen once per session: switching it changes every lit material's program,
+    // which would recompile them all. Later preset changes only resize the shadow map.
+    if (this.shadowType == null && this.scene) {
+      this.shadowType = q.soft ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+      this.renderer.shadowMap.type = this.shadowType;
+      this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => (m.needsUpdate = true)); });
+    }
+    if (this.topPreset == null && this.scene) this.topPreset = name;
     if (this.light) {
       this.light.shadow.mapSize.set(q.shadow, q.shadow);
       if (this.light.shadow.map) {
@@ -141,8 +202,6 @@ export class Renderer {
         this.light.shadow.map = null;
       }
     }
-    // shadow map type changes require material recompiles
-    this.scene?.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => (m.needsUpdate = true)); });
     if (this.scene) this._buildComposer();
   }
 
@@ -163,7 +222,12 @@ export class Renderer {
     return this.renderer.domElement.height;
   }
 
-  /** Called every frame with the real frame delta to adapt render resolution. */
+  /**
+   * Auto quality, called every frame with the real frame delta. Render scale moves first (cheap); a preset
+   * change is handed to onPreset, which the game applies between runs (no recompiles mid-run). It only
+   * steps down when the GPU is what's slow: a 30 fps cap, a 50 Hz display or a busy CPU leave quality
+   * alone. With steady headroom it climbs back up, to the preset it started at.
+   */
   adapt(dtMs, auto) {
     if (!auto) return;
     this.frameTimes.push(dtMs);
@@ -172,26 +236,63 @@ export class Renderer {
     if (this.evalTimer < 1000 || this.frameTimes.length < 45) return;
     this.evalTimer = 0;
     const sorted = [...this.frameTimes].sort((a, b) => a - b);
+    const p10 = sorted[Math.floor(sorted.length * 0.1)];
     const p50 = sorted[Math.floor(sorted.length * 0.5)];
-    if (p50 > 19.5) {
+    this.vsyncMs = Math.min(this.vsyncMs, p10);
+    const budget = Math.max(19.5, this.vsyncMs * 1.15);
+    const g = [...this.gpuTimes].sort((a, b) => a - b);
+    const gpu = g.length >= 10 ? g[Math.floor(g.length / 2)] : null;
+    const gpuBound = gpu == null || gpu > 0.7 * p50;
+    const order = ['low', 'medium', 'high'];
+    if (p50 > budget && gpuBound) {
       this.goodTime = 0;
       if (this.scale > 0.62) {
         this.scale = Math.max(0.6, this.scale - 0.1);
         this.resize();
-      } else if (this.qualityName !== 'low') {
-        const next = this.qualityName === 'high' ? 'medium' : 'low';
-        this.scale = 0.85;
-        this.setQuality(next);
-        this.onQualityDrop?.(next);
+      } else if (this.qualityName !== 'low' && this.wantPreset !== order[order.indexOf(this.qualityName) - 1]) {
+        this.wantPreset = order[order.indexOf(this.qualityName) - 1];
+        this.onPreset?.(this.wantPreset);
       }
       this.frameTimes.length = 0;
-    } else if (p50 < 17.6) {
+    } else if (p50 < budget * 0.85 && (gpu == null || gpu < budget * 0.6)) {
       this.goodTime += 1;
       if (this.goodTime >= 4 && this.scale < 1) {
         this.scale = Math.min(1, this.scale + 0.05);
         this.goodTime = 0;
         this.resize();
+      } else if (this.goodTime >= 20 && this.scale >= 1 && gpu != null && gpu < budget * 0.4 && order.indexOf(this.qualityName) < order.indexOf(this.topPreset)) {
+        this.goodTime = 0;
+        this.wantPreset = order[order.indexOf(this.qualityName) + 1];
+        this.onPreset?.(this.wantPreset);
       }
+    }
+  }
+
+  /** Post-processing materials, by the kind of target they draw into (for compiling them during loading). */
+  postMaterials() {
+    const b = this.bloom;
+    const hdr = [this.scenePass.quad.material, b.materialHighPassFilter, ...(b.separableBlurMaterials || []), b.compositeMaterial, b.blendMaterial].filter(Boolean);
+    return { hdr, screen: [this.grade.material] };
+  }
+
+  /** Applies a preset chosen by Auto (the game calls this between runs). */
+  applyPreset(name) {
+    this.wantPreset = null;
+    this.scale = name === this.qualityName ? this.scale : 0.9;
+    this.setQuality(name);
+  }
+
+  _pollGpu() {
+    const gl = this.gl, ext = this.timerExt;
+    while (this.gpuPending.length && gl.getQueryParameter(this.gpuPending[0], gl.QUERY_RESULT_AVAILABLE)) {
+      const q = this.gpuPending.shift();
+      if (!gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+        const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+        this.gpuTimes.push(ms);
+        if (this.gpuTimes.length > 90) this.gpuTimes.shift();
+        if (this.gpuNew.length < 240) this.gpuNew.push(ms);
+      }
+      gl.deleteQuery(q);
     }
   }
 
@@ -204,7 +305,18 @@ export class Renderer {
     const g = this.grade.uniforms;
     g.uTime.value = time;
     g.uFlash.value = flash;
+    g.toneMappingExposure.value = this.renderer.toneMappingExposure;
     if (flashColor) g.uFlashColor.value.copy(flashColor);
+    let q = null;
+    if (this.timerExt && this.gpuPending.length < 4) {
+      q = this.gl.createQuery();
+      this.gl.beginQuery(this.timerExt.TIME_ELAPSED_EXT, q);
+    }
     this.composer.render();
+    if (q) {
+      this.gl.endQuery(this.timerExt.TIME_ELAPSED_EXT);
+      this.gpuPending.push(q);
+    }
+    if (this.timerExt) this._pollGpu();
   }
 }

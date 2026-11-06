@@ -1,0 +1,8 @@
+/* Press Start 2P, woff2 only: every WebGL2 browser reads woff2, so the woff fallback was dead weight. */
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(../node_modules/@fontsource/press-start-2p/files/press-start-2p-latin-400-normal.woff2) format('woff2');
+}

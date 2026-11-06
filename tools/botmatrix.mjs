@@ -42,9 +42,11 @@ async function runJob(s, j) {
     if (g.rig.mode !== '${j.view}') { g.rig.setMode('${j.view}'); g.rig.raw = g.rig.blend = '${j.view}' === '3d' ? 1 : 0; g.hud.setView('${j.view}'); }
     g.selectMonster('${j.monster}', true); return g.monster.id + '/' + g.level.id + '/' + g.rig.mode; })()`);
   if (typeof setup !== 'string' || !setup.startsWith(j.monster)) return { ...j, error: 'setup ' + JSON.stringify(setup) };
+  // the bot goes in before the run starts (it idles until then): injected after the start, a busy
+  // machine could let the fast simulation reach the first obstacle with nobody at the controls
+  await s.evaluate(bot);
   await s.evaluate('window.__game._onJump()');
   if (!(await s.waitState('running', 30000))) return { ...j, error: 'did not start' };
-  await s.evaluate(bot);
   const start = await s.evaluate('window.__game.time');
   for (;;) {
     await sleep(1500);

@@ -831,3 +831,10 @@ kbd {
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
 @media (pointer: coarse) { #toast { bottom: 120px; } }
+
+/* During a run, frosted-glass blurs over the moving 3D view cost GPU time every frame: in-run controls use a plain translucent fill */
+#hud:not(.menu) .btn, #hud:not(.menu) .rival, #hud:not(.menu) .tbtn { backdrop-filter: none; -webkit-backdrop-filter: none; }
+#hud:not(.menu) .btn { background: rgba(14, 16, 20, 0.55); }
+#hud:not(.menu) .tbtn { background: rgba(14, 16, 20, 0.45); }
+#hud:not(.menu) .rival { background: rgba(14, 16, 20, 0.62); }
+#toast { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(20, 22, 26, 0.88); }

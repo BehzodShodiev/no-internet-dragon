@@ -21,11 +21,13 @@ function swapUV(g) {
   for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getY(i), uv.getX(i));
 }
 
-function stem(points, R, len, { dome = true, ground = false } = {}) {
+// radial / rings: mesh detail (around, and rings per unit of length). Obstacles you run into keep the
+// full 48 x 14; background saguaros far off the track use a fraction of that.
+function stem(points, R, len, { dome = true, ground = false, radial = 48, rings = 14 } = {}) {
   const g = sweep({
     points,
-    segments: Math.max(10, Math.round(len * 14)),
-    radial: 48,
+    segments: Math.max(6, Math.round(len * rings)),
+    radial,
     uvScale: [len / (2 * Math.PI * R * 2), 1],
     curveType: 'catmullrom',
     section: (t, a, out) => {
@@ -53,11 +55,11 @@ function stem(points, R, len, { dome = true, ground = false } = {}) {
 }
 
 /** Builds a saguaro. Returns { geometry, boxes } with boxes in local space (x-y plane). */
-export function buildCactus(rand, { height, radius, arms }) {
+export function buildCactus(rand, { height, radius, arms, radial = 48, rings = 14 }) {
   const geos = [];
   const boxes = [[-radius * 0.7, 0, radius * 0.7, height * 0.92]];
   const trunkLen = height + 0.3;
-  geos.push(stem([V(0, -0.3), V(0.02 * (rand() - 0.5), height * 0.5), V(0, height)], radius, trunkLen, { ground: true }));
+  geos.push(stem([V(0, -0.3), V(0.02 * (rand() - 0.5), height * 0.5), V(0, height)], radius, trunkLen, { ground: true, radial, rings }));
   const used = [];
   for (let i = 0; i < arms; i++) {
     let side = rand() < 0.5 ? 1 : -1;
@@ -73,7 +75,7 @@ export function buildCactus(rand, { height, radius, arms }) {
     ];
     let len = 0;
     for (let k = 1; k < pts.length; k++) len += pts[k].distanceTo(pts[k - 1]);
-    const g = stem(pts, ar, len);
+    const g = stem(pts, ar, len, { radial, rings });
     const ang = side > 0 ? (rand() - 0.5) * 0.7 : Math.PI + (rand() - 0.5) * 0.7;
     g.rotateY(ang);
     geos.push(g);
@@ -83,9 +85,10 @@ export function buildCactus(rand, { height, radius, arms }) {
   return { geometry: mergeLoose(geos), boxes };
 }
 
-export function buildRock(seed, w, h, d) {
+/** detail: icosphere subdivision (9 = 2,000 triangles for rocks you run into; scenery uses less). */
+export function buildRock(seed, w, h, d, detail = 9) {
   const noise = createNoise(seed);
-  const g = blob(1, 9, (v) => {
+  const g = blob(1, detail, (v) => {
     const n = noise.fbm3(v.x * 1.4 + seed, v.y * 1.4, v.z * 1.4, 4) * 0.35;
     const facets = Math.abs(noise.noise3(v.x * 3 + 7, v.y * 3, v.z * 3)) * 0.08;
     v.multiplyScalar(1 + n - facets);
@@ -366,10 +369,7 @@ export class Obstacles {
   _release(o) {
     o.group.visible = false;
     this.root.remove(o.group);
-    if (o.type.startsWith('cactus') || o.type === 'rock' || o.type === 'building' || o.type === 'car') {
-      o.group.clear();
-    }
-    this.pools[o.type].push(o);
+    this.pools[o.type].push(o); // children stay: the next spawn of this object restyles them
   }
 
   _spawnStructure(kind) {
@@ -385,9 +385,11 @@ export class Obstacles {
 
   _spawnBuilding() {
     const o = this._acquire('building');
-    const m = this.city.makeBuilding(this.rand);
-    o.group.add(m);
-    const { w, h } = m.userData;
+    if (!o.model) {
+      o.model = this.city.makeBuilding(this.rand);
+      o.group.add(o.model);
+    } else this.city.restyleBuilding(o.model, this.rand);
+    const { w, h } = o.model.userData;
     o.boxes.length = 0;
     o.boxes.push([-w / 2, 0, w / 2, h]);
     o.width = w;
@@ -397,7 +399,10 @@ export class Obstacles {
 
   _spawnCar() {
     const o = this._acquire('car');
-    o.group.add(this.city.makeCar(this.rand));
+    if (!o.model) {
+      o.model = this.city.makeCar(this.rand);
+      o.group.add(o.model);
+    } else this.city.restyleCar(o.model, this.rand);
     o.boxes.length = 0;
     o.boxes.push([-1.1, 0, 1.1, 1.15]);
     o.width = 2.2;
@@ -499,25 +504,36 @@ export class Obstacles {
     const variants = this.cactusVariants[type];
     let x = 0;
     const spacing = type === 'cactusS' ? 0.62 : 0.95;
+    // pooled objects keep their cactus meshes between spawns (no allocation per spawn)
+    const parts = (o.parts ||= []);
+    for (let i = 0; i < parts.length; i++) parts[i].visible = i < count;
+    let minX = Infinity, maxX = -Infinity;
     for (let i = 0; i < count; i++) {
       const v = variants[Math.floor(this.rand() * variants.length)];
-      const m = new THREE.Mesh(v.geometry, this.cactusMat);
-      m.castShadow = true;
-      m.receiveShadow = true;
+      let m = parts[i];
+      if (!m) {
+        m = parts[i] = new THREE.Mesh(v.geometry, this.cactusMat);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        o.group.add(m);
+      }
+      m.geometry = v.geometry;
+      m.visible = true;
       const s = 0.92 + this.rand() * 0.16;
       m.scale.setScalar(s);
       m.position.set(x, 0, (this.rand() - 0.5) * 0.5);
       m.rotation.y = (this.rand() - 0.5) * 0.4;
-      o.group.add(m);
-      for (const b of v.boxes) o.boxes.push([x + b[0] * s, b[1] * s, x + b[2] * s, b[3] * s]);
+      for (const b of v.boxes) {
+        o.boxes.push([x + b[0] * s, b[1] * s, x + b[2] * s, b[3] * s]);
+        minX = Math.min(minX, x + b[0] * s);
+        maxX = Math.max(maxX, x + b[2] * s);
+      }
       x += spacing * (0.85 + this.rand() * 0.4);
     }
     // centre the group
-    const minX = Math.min(...o.boxes.map((b) => b[0]));
-    const maxX = Math.max(...o.boxes.map((b) => b[2]));
     const cx = (minX + maxX) / 2;
-    o.group.children.forEach((c) => (c.position.x -= cx));
-    o.boxes.forEach((b) => { b[0] -= cx; b[2] -= cx; });
+    for (let i = 0; i < count; i++) parts[i].position.x -= cx;
+    for (const b of o.boxes) { b[0] -= cx; b[2] -= cx; }
     o.width = maxX - minX;
     o.vx = 0;
     return o;
@@ -526,11 +542,16 @@ export class Obstacles {
   _spawnRock() {
     const o = this._acquire('rock');
     const v = this.rockVariants[Math.floor(this.rand() * this.rockVariants.length)];
-    const m = new THREE.Mesh(v.geometry, this.rockMat);
-    m.castShadow = m.receiveShadow = true;
+    let m = o.parts?.[0];
+    if (!m) {
+      m = new THREE.Mesh(v.geometry, this.rockMat);
+      m.castShadow = m.receiveShadow = true;
+      m.position.y = -0.05;
+      o.parts = [m];
+      o.group.add(m);
+    }
+    m.geometry = v.geometry;
     m.rotation.y = this.rand() * Math.PI * 2;
-    m.position.y = -0.05;
-    o.group.add(m);
     o.boxes.length = 0;
     o.boxes.push([-v.w * 0.3, 0, v.w * 0.3, v.h * 0.75]);
     o.width = v.w;

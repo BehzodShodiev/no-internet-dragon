@@ -82,9 +82,11 @@ export class HUD {
     this._blink = 0.9;
   }
 
+  // per-frame setters only touch the DOM when the value changes (no style invalidation otherwise)
   setCharge(c, ready) {
-    this.el.chargeFill.style.transform = `scaleX(${c.toFixed(3)})`;
-    this.el.charge.classList.toggle('ready', ready);
+    const k = c.toFixed(3);
+    if (k !== this._chargeK) { this._chargeK = k; this.el.chargeFill.style.transform = `scaleX(${k})`; }
+    if (ready !== this._chargeReady) { this._chargeReady = ready; this.el.charge.classList.toggle('ready', ready); }
   }
 
   chargeDenied() {
@@ -114,9 +116,10 @@ export class HUD {
   }
 
   setRage(v, active, ending) {
-    this.el.rageFill.style.transform = `scaleX(${v.toFixed(3)})`;
-    this.el.rage.classList.toggle('active', active);
-    this.el.rage.classList.toggle('ending', ending);
+    const k = v.toFixed(3);
+    if (k !== this._rageK) { this._rageK = k; this.el.rageFill.style.transform = `scaleX(${k})`; }
+    if (active !== this._rageA) { this._rageA = active; this.el.rage.classList.toggle('active', active); }
+    if (ending !== this._rageE) { this._rageE = ending; this.el.rage.classList.toggle('ending', ending); }
   }
 
   setBoss(name, hp, max) {
@@ -165,11 +168,13 @@ export class HUD {
 
   /** Incoming-fire markers: list of { x, y, kind: 'low' | 'mid' } in px. */
   setWarnings(list) {
+    if (!list.length && !this._warnShown) return;
+    this._warnShown = list.length;
     this._warns.forEach((w, i) => {
       const it = list[i];
-      w.hidden = !it;
+      if (w.hidden !== !it) w.hidden = !it;
       if (!it) return;
-      w.style.transform = `translate(${it.x}px, ${it.y}px)`;
+      w.style.transform = `translate(${it.x | 0}px, ${it.y | 0}px)`;
       if (w.dataset.kind !== it.kind) {
         w.className = `warn ${it.kind}`;
         w.dataset.kind = it.kind;

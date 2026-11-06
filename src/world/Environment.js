@@ -13,13 +13,27 @@ const DEG = Math.PI / 180;
 // --- CPU port of three's Sky (Preetham) shader, used to colour the fog to match the horizon ---
 const totalRayleigh = [5.804542996261093e-6, 1.3562911419845635e-5, 3.0265902468824876e-5];
 const MieConst = [1.8399918514433978e14, 2.7798023919660528e14, 4.0790479543861094e14];
+// scratch for skyColor (it runs twice a frame; nothing is allocated)
+const _betaR = [0, 0, 0], _betaM = [0, 0, 0], _res = [0, 0, 0];
+const SKY_FLOOR = [0, 0.0003, 0.00075];
+// constant colours used by update() (read-only)
+const C_SUN_DAY = new THREE.Color(1.0, 0.93, 0.84);
+const C_GROUND_DAY = new THREE.Color(0.55, 0.4, 0.28);
+const C_CLOUD_DUSK = new THREE.Color(0.75, 0.42, 0.46);
+const C_CLOUD_NIGHT = new THREE.Color(0.06, 0.08, 0.13);
+const C_CLOUD_ASH = new THREE.Color(0.2, 0.08, 0.06);
+const UP = new THREE.Vector3(0, 1, 0);
+
 function skyColor(dir, sunDir, p, out) {
   const EE = 1000, cutoff = 1.6110731556870734, steep = 1.5;
   const zc = Math.max(-1, Math.min(1, sunDir.y));
   const sunE = EE * Math.max(0, 1 - Math.exp(-((cutoff - Math.acos(zc)) / steep)));
-  const betaR = totalRayleigh.map((v) => v * p.rayleigh);
   const c = 0.2 * p.turbidity * 10e-18;
-  const betaM = MieConst.map((v) => 0.434 * c * v * p.mieCoefficient);
+  const betaR = _betaR, betaM = _betaM;
+  for (let i = 0; i < 3; i++) {
+    betaR[i] = totalRayleigh[i] * p.rayleigh;
+    betaM[i] = 0.434 * c * MieConst[i] * p.mieCoefficient;
+  }
   const zenith = Math.acos(Math.max(0, dir.y));
   const inv = 1 / (Math.cos(zenith) + 0.15 * Math.pow(93.885 - (zenith * 180) / Math.PI, -1.253));
   const sR = 8.4e3 * inv, sM = 1.25e3 * inv;
@@ -29,14 +43,14 @@ function skyColor(dir, sunDir, p, out) {
   const g = p.mieDirectionalG, g2 = g * g;
   const mPhase = 0.07957747154594767 * ((1 - g2) / Math.pow(1 - 2 * g * cosT + g2, 1.5));
   const horizonMix = Math.min(1, Math.max(0, Math.pow(1 - sunDir.y, 5)));
-  const res = [0, 0, 0];
+  const res = _res;
   for (let i = 0; i < 3; i++) {
     const Fex = Math.exp(-(betaR[i] * sR + betaM[i] * sM));
     const ratio = (betaR[i] * rPhase + betaM[i] * mPhase) / (betaR[i] + betaM[i]);
     let Lin = Math.pow(sunE * ratio * (1 - Fex), 1.5);
     Lin *= 1 + (Math.pow(sunE * ratio * Fex, 0.5) - 1) * horizonMix;
     const L0 = 0.1 * Fex;
-    const tex = (Lin + L0) * 0.04 + [0, 0.0003, 0.00075][i];
+    const tex = (Lin + L0) * 0.04 + SKY_FLOOR[i];
     res[i] = Math.pow(tex, 1 / 2.4);
   }
   return out.setRGB(res[0], res[1], res[2], THREE.LinearSRGBColorSpace);
@@ -70,17 +84,16 @@ function keyedColor(x, keys, cols, out) {
 function twilightSky(dir, sunDir, deep, glow, out) {
   const up = Math.max(dir.y, 0);
   const hz = Math.pow(1 - up, 4);
-  const lerp = (a, b, t) => a + (b - a) * t;
-  const zen = [lerp(0.05, 0.006, deep), lerp(0.09, 0.011, deep), lerp(0.22, 0.03, deep)];
-  const hor = [lerp(0.24, 0.03, deep), lerp(0.18, 0.045, deep), lerp(0.32, 0.085, deep)];
+  const z0 = 0.05 + (0.006 - 0.05) * deep, z1 = 0.09 + (0.011 - 0.09) * deep, z2 = 0.22 + (0.03 - 0.22) * deep;
+  const h0 = 0.24 + (0.03 - 0.24) * deep, h1 = 0.18 + (0.045 - 0.18) * deep, h2 = 0.32 + (0.085 - 0.32) * deep;
   const dl = Math.hypot(dir.x, dir.z) || 1, sl = Math.hypot(sunDir.x, sunDir.z) || 1;
   const az = Math.max(0, (dir.x * sunDir.x + dir.z * sunDir.z) / (dl * sl));
   const g1 = Math.pow(az, 4) * Math.exp(-up * 8) * glow;
   const g2 = Math.pow(az, 1.5) * Math.exp(-up * 4) * glow * 0.35;
   return out.setRGB(
-    lerp(zen[0], hor[0], hz) + 0.95 * g1 + 0.5 * g2,
-    lerp(zen[1], hor[1], hz) + 0.4 * g1 + 0.25 * g2,
-    lerp(zen[2], hor[2], hz) + 0.16 * g1 + 0.35 * g2,
+    z0 + (h0 - z0) * hz + 0.95 * g1 + 0.5 * g2,
+    z1 + (h1 - z1) * hz + 0.4 * g1 + 0.25 * g2,
+    z2 + (h2 - z2) * hz + 0.16 * g1 + 0.35 * g2,
     THREE.LinearSRGBColorSpace
   );
 }
@@ -140,6 +153,12 @@ export class Environment {
     this.envGround.position.y = -2;
     this.envScene.add(this.envGround);
     this.pmrem = new THREE.PMREMGenerator(renderer);
+    this.renderer = renderer;
+    // IBL re-bakes reuse the same targets: the sky renders into a persistent cube target and PMREM
+    // refills the same environment target, so a bake allocates nothing and the scene's environment
+    // texture never changes identity (no material re-validation).
+    this.cubeRT = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+    this.cubeCam = new THREE.CubeCamera(1, 2000, this.cubeRT);
     this.envRT = null;
     this.lastEnvSun = new THREE.Vector3(0, -1, 0);
     this.envTimer = 0;
@@ -333,7 +352,7 @@ export class Environment {
 
     // shadow-casting light: the sun sets fully before the moon starts fading in, so the single
     // light can swap direction while it is dark and nothing visibly jumps
-    const sunCol = this._tmpC.setRGB(1.0, 0.42, 0.18).lerp(new THREE.Color(1.0, 0.93, 0.84), smooth(2, 38, elev));
+    const sunCol = this._tmpC.setRGB(1.0, 0.42, 0.18).lerp(C_SUN_DAY, smooth(2, 38, elev));
     const useMoon = elev < -2;
     const dir = useMoon ? this.moonLightDir : this.sunDir;
     this.light.position.copy(this.light.target.position).addScaledVector(dir, 80);
@@ -351,12 +370,13 @@ export class Environment {
     u.uGlow.value = smooth(7, 0, elev) * smooth(-11, -3, elev);
 
     // ambient: the sky's own colour by day, a hand-tuned twilight ramp after sunset
-    const skyZen = new THREE.Color();
-    skyColor(new THREE.Vector3(0, 1, 0), this.sunDir, this.params, skyZen);
+    const skyZen = (this._skyZen ||= new THREE.Color());
+    skyColor(UP, this.sunDir, this.params, skyZen);
+    const zen2 = (this._zen2 ||= new THREE.Color());
     const dayW = smooth(1, 12, elev);
-    keyedColor(elev, TWI_KEYS, TWI_SKY, this.hemi.color).lerp(skyZen.clone().multiplyScalar(1.4), dayW);
+    keyedColor(elev, TWI_KEYS, TWI_SKY, this.hemi.color).lerp(zen2.copy(skyZen).multiplyScalar(1.4), dayW);
     keyedColor(elev, TWI_KEYS, TWI_GROUND, this.hemi.groundColor).lerp(
-      new THREE.Color(0.55, 0.4, 0.28).multiplyScalar(0.35 + 0.65 * day), dayW
+      (this._grnd ||= new THREE.Color()).copy(C_GROUND_DAY).multiplyScalar(0.35 + 0.65 * day), dayW
     );
     this.hemi.intensity = keyed(elev, TWI_KEYS, TWI_HEMI_I);
     this.exposure = keyed(elev, TWI_KEYS, TWI_EXPOSURE);
@@ -382,8 +402,8 @@ export class Environment {
     this._tmpV.normalize();
     this._tmpV.y = 0.035;
     this._tmpV.normalize();
-    const fogC = skyColor(this._tmpV, this.sunDir, this.params, new THREE.Color());
-    fogC.lerp(twilightSky(this._tmpV, this.sunDir, deep, u.uGlow.value, new THREE.Color()), u.uNight.value);
+    const fogC = skyColor(this._tmpV, this.sunDir, this.params, (this._fogA ||= new THREE.Color()));
+    fogC.lerp(twilightSky(this._tmpV, this.sunDir, deep, u.uGlow.value, (this._fogB ||= new THREE.Color())), u.uNight.value);
     fogC.lerp(this._tmpC2.setRGB(0.17, 0.12, 0.12), 0.45 * cityNight);
     fogC.lerp(this._tmpC2.setRGB(0.3, 0.11, 0.05), volc);
     this.scene.fog.color.copy(fogC);
@@ -408,10 +428,10 @@ export class Environment {
 
     // clouds take on the light of the sky: white by day, lit pink at sunset, blue-grey at night
     const ct = this.cloudTint;
-    ct.copy(sunCol).multiplyScalar(1.1 * day).add(skyZen.clone().multiplyScalar(0.9));
-    ct.lerp(new THREE.Color(0.75, 0.42, 0.46), smooth(8, 0, elev));
-    ct.lerp(new THREE.Color(0.06, 0.08, 0.13), deep);
-    ct.lerp(new THREE.Color(0.2, 0.08, 0.06), volc); // ash clouds
+    ct.copy(sunCol).multiplyScalar(1.1 * day).add(zen2.copy(skyZen).multiplyScalar(0.9));
+    ct.lerp(C_CLOUD_DUSK, smooth(8, 0, elev));
+    ct.lerp(C_CLOUD_NIGHT, deep);
+    ct.lerp(C_CLOUD_ASH, volc); // ash clouds
     for (const c of this.clouds) c.material.color.copy(ct);
 
     // refresh image-based lighting when the sun has moved enough
@@ -437,10 +457,10 @@ export class Environment {
     const night = this.nightness;
     this.envGround.material.color.setRGB(0.35, 0.26, 0.17).multiplyScalar(Math.max(0.03, smooth(-4, 20, this.sunElev)))
       .lerp(this._tmpC2.setRGB(0.22, 0.07, 0.03), this.biome.tVolc);
-    const rt = this.pmrem.fromScene(this.envScene, 0, 1, 2000);
-    if (this.envRT) this.envRT.dispose();
-    this.envRT = rt;
-    this.scene.environment = rt.texture;
+    this.cubeCam.update(this.renderer, this.envScene);
+    if (!this.envRT) this.envRT = this.pmrem.fromCubemap(this.cubeRT.texture);
+    else this.pmrem.fromCubemap(this.cubeRT.texture, this.envRT);
+    if (this.scene.environment !== this.envRT.texture) this.scene.environment = this.envRT.texture;
     this.scene.backgroundIntensity = 1;
     void night;
   }

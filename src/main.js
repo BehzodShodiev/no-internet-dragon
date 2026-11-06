@@ -1,4 +1,4 @@
-import '@fontsource/press-start-2p/latin-400.css';
+import './font.css';
 import './style.css';
 import { Game } from './game/Game.js';
 

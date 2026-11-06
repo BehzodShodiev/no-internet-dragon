@@ -54,6 +54,7 @@ for (const name of pick) {
   const ok = sc.budgetless || (st.p95 <= 16.7 && st.long50 === 0);
   if (!ok) over++;
   results[name] = { ...st, loadMs: loadTotal, loadSteps: steps, deaths };
+  for (const f of st.longFrames || []) console.log(`      long frame ${f.ms} ms at ${f.at} ms: ${f.newPrograms} new programs, update ${f.update} ms, render ${f.render} ms`);
   console.log(`${ok ? 'pass' : 'OVER'}  ${name.padEnd(16)} p50 ${st.p50} p95 ${st.p95} p99 ${st.p99} ms · >33ms ${st.long33} >50ms ${st.long50} · cpu ${st.cpuUpdate}+${st.cpuRender} ms · gpu ${st.gpu ?? 'n/a'} ms · ${st.calls} draws · ${(st.triangles / 1e6).toFixed(2)}M tris · load ${loadTotal} ms`);
 }
 await close();

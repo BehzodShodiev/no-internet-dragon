@@ -89,9 +89,11 @@ export class Scenery {
 
     // geometry variants
     const bush = buildBush();
-    const rocks = [0, 1, 2].map((i) => buildRock(300 + i, 1.4, 1.0, 1.2));
+    // background props get lighter meshes than the obstacles you run into (same look at their size)
+    const rocks = [0, 1, 2].map((i) => buildRock(300 + i, 1.4, 1.0, 1.2, 4));
+    const bigRocks = [0, 1, 2].map((i) => buildRock(300 + i, 1.4, 1.0, 1.2, 6));
     const cactusR = mulberry32(5);
-    const cacti = [0, 1, 2].map(() => buildCactus(cactusR, { height: 3.4 + cactusR() * 1.2, radius: 0.36, arms: 2 }).geometry);
+    const cacti = [0, 1, 2].map(() => buildCactus(cactusR, { height: 3.4 + cactusR() * 1.2, radius: 0.36, arms: 2, radial: 18, rings: 4 }).geometry);
     const mesas = [
       buildMesa(1, 42, 62), buildMesa(2, 60, 40), buildMesa(3, 28, 78), buildMesa(4, 75, 30),
     ];
@@ -115,7 +117,7 @@ export class Scenery {
         zRanges: [[-200, -32], [26, 220]], scale: [0.8, 1.6], shadow: true, yaw: true,
       });
     }
-    for (const g of rocks) {
+    for (const g of bigRocks) {
       this._layer({
         geometry: g, material: materials.rock, L: P, x0: -100, count: 8, rand,
         zRanges: [[-260, -40], [40, 240]], scale: [2, 6], shadow: false, sink: 0.3, yaw: true,

@@ -45,10 +45,17 @@ const swManifest = () => ({
 
 // `npm run build`        -> dist/ (hashed assets + service worker for offline play)
 // `npm run build:single` -> dist-single/index.html, one self-contained file you can double-click
+// Texture cache key: changes whenever a texture generator changes (see src/gfx/TexCache.js).
+const texKey = createHash('sha1')
+  .update(fs.readFileSync(new URL('./src/gfx/textures.js', import.meta.url)))
+  .update(fs.readFileSync(new URL('./src/gfx/noise.js', import.meta.url)))
+  .digest('hex').slice(0, 12);
+
 export default defineConfig(({ mode }) => {
   const single = mode === 'single';
   return {
     base: './',
+    define: { __TEX_KEY__: JSON.stringify(texKey) },
     plugins: single ? [singleFileHead(), viteSingleFile({ removeViteModuleLoader: true })] : [swManifest()],
     publicDir: single ? false : 'public',
     build: {

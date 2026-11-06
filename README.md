@@ -113,10 +113,12 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 
 ## Performance
 
-- Quality presets are Low, Medium and High. **Auto** (the default) starts at High on desktop and Medium on touch devices, then adjusts render resolution, dropping a preset only if that isn't enough.
-- All shaders compile during the loading screen, against the same HDR render target the game draws into, so no shader compiles in the middle of a run.
-- Obstacles are pooled, scenery is instanced, particles reuse fixed buffers and the main loop avoids allocations.
-- Measured on an Intel Arc 140T integrated GPU at 1280×720: 60 fps on High through the army stage, Kaiju Rage and the boss fight at top speed. Game logic stays under 1 ms a frame; a few isolated frames per minute take 33–50 ms.
+- Quality presets are Low, Medium and High. **Auto** (the default) starts at High on desktop and Medium on touch devices and adjusts render resolution first. It only steps down when the GPU is what is slow (it times the GPU where the browser allows), so a 30 fps cap, a 50 Hz display or a busy CPU leave quality alone; a preset change waits for the end of the run, and with steady headroom it climbs back up.
+- Every shader, the post-processing ones included, compiles during loading against the target it really draws into, and the other monsters are built and compiled in the background while the title is idle, so neither a run nor picking a monster stalls.
+- Only the scene is multisampled: bloom and the final pass (tone mapping and grade merged into one draw) work on plain half-float targets. The sky lighting re-bakes into the same targets every time, so it allocates nothing and never invalidates materials.
+- Background props use lighter meshes than the obstacles you run into (the far saguaros alone were 1.3 million triangles per pass). Obstacles, including their meshes, are pooled and restyled; scenery is instanced; particles reuse fixed buffers; the main loop allocates nothing; the HUD only touches the page when a value changes; in-run buttons skip the frosted-glass blur; paused and menu screens redraw less often.
+- Procedural textures are cached in the browser after the first visit (keyed to the generator code), so repeat visits reach the title in about 1.2 s instead of 3.7 s.
+- Measured in headless Chrome on an Intel iGPU at 1280×720 on High (`npm run test:perf`): GPU time per frame 2.7–3.6 ms across the Desert, City, Volcano gunship and 2D night scenes (down from 4.3–6.1 ms), under 1 million triangles a frame (down from up to 3.7 million), no frames over 50 ms.
 
 ## Testing
 

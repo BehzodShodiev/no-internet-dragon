@@ -24,6 +24,7 @@ import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
 import * as TX from '../gfx/textures.js';
+import { TexCache } from '../gfx/TexCache.js';
 import { mulberry32, hash32 } from '../gfx/noise.js';
 
 export const CFG = {
@@ -146,6 +147,26 @@ export class Game {
     this._bossBox = new Float32Array(4);
     this._v3c = new THREE.Color();
     this._sideMouths = [new THREE.Vector3(), new THREE.Vector3()];
+    // per-frame scratch (the main loop allocates nothing)
+    this.coarseMQ = matchMedia('(pointer: coarse)');
+    this._scr = { x: 0, y: 0, behind: false };
+    this._warnList = Array.from({ length: 8 }, () => ({ x: 0, y: 0, kind: 'low' }));
+    this._warns = [];
+    this._homes = { wide: { x: 15.5, y: 4.6 }, tall: { x: 9, y: 5.4 } };
+    this._dst = { speed: 0, grounded: true, vy: 0, ducking: false, running: false, dead: false, roar: 0, breath: 0, bite: 0, glide: false };
+    this._rigOpts = { aspect: 1, dragonY: 0, speed: 0, rage: 0 };
+    this._crystalOpts = { magnet: 0, onPick: (c) => this._pickCrystal(c), onMiss: () => this._missCrystal() };
+    this._bossCtx = {
+      home: null, yaw: 0,
+      fire: (y, x0, y0) => {
+        this.obstacles.spawnMissile(x0, y0, y, CFG.missileSpeed + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
+        this.audio.missileLaunch(x0);
+        for (let i = 0; i < 8; i++) this.dust.emit(x0, y0, 0, Math.random() * 2, -1 + Math.random() * 2, (Math.random() - 0.5) * 2, 0.7, 0.4, 2, 0.5, 0.5, 0.5, 0.5, 2, 0, 0);
+      },
+      smoke: (x, y) => this.dust.emit(x, y, (Math.random() - 0.5), Math.random() * 2, 1 + Math.random() * 2, 0, 1.4, 1, 4, 0.12, 0.11, 0.1, 0.6, 1.5, -0.4, 0),
+      blast: (x, y, size) => this._blast(x, y, size),
+      onGone: () => this._afterBoss(),
+    };
     // one-time hints already shown (remembered across visits)
     try { this.tips = JSON.parse(store.get('dragon.tips', '{}')) || {}; } catch { this.tips = {}; }
     this._resetRun();
@@ -255,13 +276,7 @@ export class Game {
   selectMonster(id, preview = false) {
     const m = MONSTERS.find((x) => x.id === id);
     if (!m || (!this.progress.isUnlocked(m) && !preview)) return;
-    let d = this.dragons[m.id];
-    if (!d) {
-      d = this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant);
-      d.onFootstep = (leg, fx) => this._footstep(leg, fx);
-      d.onWingbeat = (k) => this._wingbeat(k);
-      this.scene.add(d.group);
-    }
+    const d = this.dragons[m.id] || this._buildMonster(m);
     for (const k in this.dragons) this.dragons[k].group.visible = k === m.id;
     d.group.position.copy(this.dragon.group.position);
     this.dragon = d;
@@ -272,6 +287,36 @@ export class Game {
     this.hud.setMonster(m, this.preview);
     if (m.skins) this.hud.setSkin(this.skinIndex);
     this.hud.renderMonsters(this.progress, m.id, this.board.isOwner);
+  }
+
+  /** Builds a monster's model (hidden) and keeps it for later picks. */
+  _buildMonster(m) {
+    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant));
+    d.onFootstep = (leg, fx) => this._footstep(leg, fx);
+    d.onWingbeat = (k) => this._wingbeat(k);
+    d.group.visible = false;
+    this.scene.add(d.group);
+    return d;
+  }
+
+  /**
+   * While the title sits idle, builds the other monsters one at a time and compiles their shaders in the
+   * background, so picking one later is instant instead of a visible freeze.
+   */
+  _prebuildMonsters() {
+    const queue = MONSTERS.filter((m) => !this.dragons[m.id]);
+    const next = () => {
+      if (!queue.length) return;
+      if (this.state !== 'title' && this.state !== 'over') { setTimeout(next, 3000); return; }
+      const m = queue.shift();
+      if (!this.dragons[m.id]) this._buildMonster(m);
+      const gl = this.renderer.renderer;
+      gl.setRenderTarget(this.renderer.scenePass.target); // compile for the target the scene draws into
+      const done = gl.compileAsync(this.scene, this.camera).catch(() => {});
+      gl.setRenderTarget(null);
+      done.then(() => setTimeout(next, 400));
+    };
+    setTimeout(next, this.sim ? 0 : 2500);
   }
 
   toggleMonsters(force) {
@@ -304,11 +349,11 @@ export class Game {
   async init() {
     // load-step timestamps (ms since navigation), for tools/perf.mjs and the ?perf overlay
     this.loadTimes = [];
-    const mark = (text) => this.loadTimes.push({ text, t: Math.round(performance.now()) });
+    const mark = (this._mark = (text) => this.loadTimes.push({ text, t: Math.round(performance.now()) }));
     const step = async (p, text) => { mark(text); this.hud.loading(p, text); await nextFrame(); };
     await step(0.05, 'Warming up the GPU…');
     this.renderer = new Renderer(this.canvas);
-    if (new URLSearchParams(location.search).has('perf')) this.perf = new PerfMonitor(this.renderer.renderer);
+    if (new URLSearchParams(location.search).has('perf')) this.perf = new PerfMonitor(this.renderer);
     const scene = (this.scene = new THREE.Scene());
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.3, 6000);
     this.rig = new CameraRig(this.camera);
@@ -318,15 +363,17 @@ export class Game {
 
     await step(0.12, 'Raking the sand…');
     const tex = {};
-    tex.sand = TX.makeSandTextures();
+    // procedural textures come from the browser's cache after the first visit (see TexCache)
+    const cache = await new TexCache().open();
+    tex.sand = await cache.textures('sand', () => TX.makeSandTextures());
     await step(0.24, 'Growing dragon scales…');
-    tex.scales = TX.makeScaleTextures();
+    tex.scales = await cache.textures('scales', () => TX.makeScaleTextures());
     await step(0.36, 'Weathering rocks…');
-    tex.rock = TX.makeRockTextures();
-    tex.cactus = TX.makeCactusTextures();
-    tex.brush = TX.makeBrushTexture();
-    tex.dot = TX.makeSoftDotTexture();
-    tex.footprint = TX.makeFootprintTexture();
+    tex.rock = await cache.textures('rock', () => TX.makeRockTextures());
+    tex.cactus = await cache.textures('cactus', () => TX.makeCactusTextures());
+    tex.brush = await cache.textures('brush', () => TX.makeBrushTexture());
+    tex.dot = await cache.textures('dot', () => TX.makeSoftDotTexture());
+    tex.footprint = await cache.textures('footprint', () => TX.makeFootprintTexture());
     this.tex = tex;
 
     await step(0.48, 'Shaping dunes…');
@@ -377,9 +424,10 @@ export class Game {
     scene.add(this.footprints.mesh);
 
     this.renderer.setup(scene, this.camera, this.env.light);
-    this.renderer.onQualityDrop = (name) => {
-      this._applyQualityContent(name);
-      this.hud.setQuality(`AUTO · ${name.toUpperCase()}`);
+    // Auto quality asks for another preset: applied now on menus, or when the current run ends
+    this.renderer.onPreset = (name) => {
+      if (this.state === 'running' || this.state === 'intro' || this.state === 'dying' || this.state === 'paused') this.pendingPreset = name;
+      else this._autoPreset(name);
     };
     this._setQuality(this.settings.quality, false);
 
@@ -395,7 +443,7 @@ export class Game {
     this.hud.setScore(0, 0);
     this.hud.setView(this.rig.mode);
     this.hud.setMuted(this.audio.muted);
-    window.addEventListener('resize', () => this.renderer.resize());
+    window.addEventListener('resize', () => { this.renderer.resize(); this._pausedDrawn = false; });
     // Lifetime stats count during a run; keep them if the tab is hidden or closed mid-run.
     const saveProgress = () => { if (!this.sim) this.progress.save(); };
     window.addEventListener('pagehide', saveProgress);
@@ -425,6 +473,7 @@ export class Game {
     this.state = 'title';
     this.hud.setMenu(true);
     this.hud.hideLoading();
+    this._prebuildMonsters();
     this.hud.show('title', true);
     this.last = performance.now();
     requestAnimationFrame((t) => this._loop(t));
@@ -476,13 +525,29 @@ export class Game {
     // Compile against the composer's HDR target: that is what the scene really renders into, and its
     // program variants (no tone mapping, linear output) differ from the on-screen ones.
     const gl = this.renderer.renderer;
-    gl.setRenderTarget(this.renderer.composer.renderTarget1);
+    gl.setRenderTarget(this.renderer.scenePass.target);
     try {
-      await gl.compileAsync(this.scene, this.camera);
+      this._mark('Compiling: programs');
+      // The scene and the post-processing shaders compile together (in parallel where the browser can),
+      // each against the kind of target it really draws into, so the first frame has nothing left to build.
+      const post = this.renderer.postMaterials();
+      const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+      const quadScene = (mats) => {
+        const sc = new THREE.Scene();
+        const geo = new THREE.PlaneGeometry(2, 2);
+        for (const m of mats) sc.add(new THREE.Mesh(geo, m));
+        return sc;
+      };
+      const jobs = [gl.compileAsync(this.scene, this.camera), gl.compileAsync(quadScene(post.hdr), cam)];
+      gl.setRenderTarget(null);
+      jobs.push(gl.compileAsync(quadScene(post.screen), cam));
+      await Promise.all(jobs);
     } catch { /* compileAsync unsupported: first render compiles instead */ }
     gl.setRenderTarget(null);
     this.rig.update(0.016, { aspect: this.renderer.aspect, dragonY: 0, speed: 0 });
+    this._mark(`Compiling: first frame (${gl.info.programs.length} programs before)`);
     this.renderer.render(0, 0);
+    this._mark(`Compiling: cleanup (${gl.info.programs.length} after)`);
     heli.beam.visible = false;
     tank.flash.visible = false;
     o.active.length = 0; // the shell and missile registered themselves as active
@@ -652,6 +717,7 @@ export class Game {
     this.state = 'title';
     this.hud.setMenu(true);
     this.hud.show('title', true);
+    if (this.pendingPreset) this._autoPreset(this.pendingPreset);
     this._onBoard();
   }
 
@@ -749,6 +815,14 @@ export class Game {
     const label = mode === 'auto' ? `AUTO · ${name.toUpperCase()}` : mode.toUpperCase();
     this.hud.setQuality(label);
     if (announce) this.hud.toast(`Graphics: ${label}`);
+  }
+
+  _autoPreset(name) {
+    this.pendingPreset = null;
+    if (this.settings.quality !== 'auto' || name === this.renderer.qualityName) return;
+    this.renderer.applyPreset(name);
+    this._applyQualityContent(name);
+    this.hud.setQuality(`AUTO · ${name.toUpperCase()}`);
   }
 
   _applyQualityContent(name) {
@@ -886,7 +960,8 @@ export class Game {
 
   /** One-time hints the first time each kind of threat shows up. */
   _checkTips() {
-    const touch = matchMedia('(pointer: coarse)').matches;
+    if (this.tips.tall && this.tips.smash && this.tips.reflect) return;
+    const touch = this.coarseMQ.matches;
     for (const o of this.obstacles.active) {
       if (o.dead || o.reflected || o.x < 2) continue;
       if (o.tall && o.x < 30) this._tip('tall', touch ? 'Too tall to jump! Tap the claw to SMASH it.' : 'Too tall to jump! SMASH it (→) or burn it (F).');
@@ -898,7 +973,11 @@ export class Game {
 
   _toScreen(x, y, z = 0) {
     const v = this._v.set(x, y, z).project(this.camera);
-    return { x: ((v.x + 1) / 2) * window.innerWidth, y: ((1 - v.y) / 2) * window.innerHeight, behind: v.z > 1 };
+    const p = this._scr;
+    p.x = ((v.x + 1) / 2) * window.innerWidth;
+    p.y = ((1 - v.y) / 2) * window.innerHeight;
+    p.behind = v.z > 1;
+    return p;
   }
 
   _popup(text, x, y, kind) {
@@ -1153,7 +1232,7 @@ export class Game {
   }
 
   _bossHome() {
-    return this.renderer.aspect < 1 ? { x: 9, y: 5.4 } : { x: 15.5, y: 4.6 };
+    return this.renderer.aspect < 1 ? this._homes.tall : this._homes.wide;
   }
 
   _updateBoss(dt) {
@@ -1167,18 +1246,10 @@ export class Game {
         this.bossesSeen++;
       }
     }
-    boss.update(dt, this.time, {
-      home: this._bossHome(),
-      yaw: 0.85 * this.rig.blend,
-      fire: (y, x0, y0) => {
-        this.obstacles.spawnMissile(x0, y0, y, CFG.missileSpeed + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
-        this.audio.missileLaunch(x0);
-        for (let i = 0; i < 8; i++) this.dust.emit(x0, y0, 0, Math.random() * 2, -1 + Math.random() * 2, (Math.random() - 0.5) * 2, 0.7, 0.4, 2, 0.5, 0.5, 0.5, 0.5, 2, 0, 0);
-      },
-      smoke: (x, y) => this.dust.emit(x, y, (Math.random() - 0.5), Math.random() * 2, 1 + Math.random() * 2, 0, 1.4, 1, 4, 0.12, 0.11, 0.1, 0.6, 1.5, -0.4, 0),
-      blast: (x, y, size) => this._blast(x, y, size),
-      onGone: () => this._afterBoss(),
-    });
+    const ctx = this._bossCtx;
+    ctx.home = this._bossHome();
+    ctx.yaw = 0.85 * this.rig.blend;
+    boss.update(dt, this.time, ctx);
     if (boss.active && boss.state === 'fight') this.hud.setBoss(`${['GUNSHIP', 'CITY GUNSHIP', 'INFERNO GUNSHIP'][this.level.id - 1]} MK-${this.bossesDowned + 1}`, boss.hp, boss.maxHp);
     else if (boss.state !== 'dying') this.hud.setBoss('', -1, 0);
   }
@@ -1263,10 +1334,15 @@ export class Game {
         this._update(realDt);
       }
     }
-    if (perf) {
-      perf.update(performance.now() - u0);
-      perf.renderBegin();
-    }
+    if (perf) perf.update(performance.now() - u0);
+    // Idle screens don't need the full frame rate: paused draws once, menus about 30 times a second.
+    if (this.state === 'paused') {
+      if (this._pausedDrawn) return;
+      this._pausedDrawn = true;
+    } else this._pausedDrawn = false;
+    if ((this.state === 'title' || this.state === 'over') && !this.sim && now - (this._lastDraw || 0) < 30) return;
+    this._lastDraw = now;
+    perf?.renderBegin();
     this.renderer.render(this.time, this.flash, this.flashColor);
     perf?.renderEnd();
   }
@@ -1297,6 +1373,7 @@ export class Game {
           + (this.seedFixed || this.debug || this.sim ? ` · seed ${this.seed}` : '');
         this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
         this.audio.music?.stinger(this.isBest ? 'best' : 'over');
+        if (this.pendingPreset) this._autoPreset(this.pendingPreset); // a quality change waits for the run to end
         this.hud.setMenu(true);
         this.hud.resetRival();
         this.hud.setBoss('', -1, 0);
@@ -1470,18 +1547,18 @@ export class Game {
     const bodyScale = DRAGON_SCALE * (1 + (CFG.rageScale - 1) * this.rageK);
     this.dragon.group.scale.set(bodyScale * this.skin.hitX, bodyScale, bodyScale); // the skin's build: x only
     this.dragon.setRage(this.rageK);
-    this.dragon.update(animDt, {
-      speed: this.speed,
-      grounded: this.grounded,
-      vy: this.vy,
-      ducking: this.ducking,
-      running: playing && this.speed > 0.5,
-      dead: this.state === 'dying' || this.state === 'over',
-      roar: this.state === 'intro' ? smooth(0, 0.25, this.introT) * smooth(1.6, 0.9, this.introT) : 0,
-      breath: breathAmt,
-      bite: this.smashT > 0 ? 1 : 0,
-      glide: this.gliding,
-    });
+    const ds = this._dst;
+    ds.speed = this.speed;
+    ds.grounded = this.grounded;
+    ds.vy = this.vy;
+    ds.ducking = this.ducking;
+    ds.running = playing && this.speed > 0.5;
+    ds.dead = this.state === 'dying' || this.state === 'over';
+    ds.roar = this.state === 'intro' ? smooth(0, 0.25, this.introT) * smooth(1.6, 0.9, this.introT) : 0;
+    ds.breath = breathAmt;
+    ds.bite = this.smashT > 0 ? 1 : 0;
+    ds.glide = this.gliding;
+    this.dragon.update(animDt, ds);
     if (this.dragon.wingDust) this._wingGlitter(dt, breathAmt);
 
     // Godzilla-style plate glow: idles softly, charges up, flares when firing, burns during rage
@@ -1522,11 +1599,8 @@ export class Game {
         this.obstacles.passed(rear, (o, clearance) => this._passObstacle(o, clearance));
       }
     }
-    this.crystals.update(dt, this.speed, this.boxes, this.state === 'running' ? n : 0, {
-      magnet: this.rageK,
-      onPick: (c) => this._pickCrystal(c),
-      onMiss: () => this._missCrystal(),
-    });
+    this._crystalOpts.magnet = this.rageK;
+    this.crystals.update(dt, this.speed, this.boxes, this.state === 'running' ? n : 0, this._crystalOpts);
 
     // projectile trails and incoming-fire warnings
     let rotor = this.boss.active || this.boss.state === 'dying' ? 1 : 0;
@@ -1545,15 +1619,20 @@ export class Game {
         this.dust.emit(o.x + b.x + 0.4, b.y + 0.4, 0, 2, 2.5, 0, 1.2, 0.5, 2.2, 0.16, 0.13, 0.12, 0.55, 1.2, -0.2, 1);
       }
     }
-    const warns = [];
+    const warns = this._warns;
+    warns.length = 0;
     if (running) {
-      for (const w of [...this.obstacles.warnings, ...this.boss.warnings]) {
-        const p = this._toScreen(w.x, w.y);
-        warns.push({
-          x: Math.min(window.innerWidth - 30, Math.max(30, p.x)),
-          y: Math.min(window.innerHeight - 70, Math.max(60, p.y)),
-          kind: w.y < 1.5 ? 'low' : 'mid',
-        });
+      const lists = [this.obstacles.warnings, this.boss.warnings];
+      for (const list of lists) {
+        for (const w of list) {
+          if (warns.length >= this._warnList.length) break;
+          const p = this._toScreen(w.x, w.y);
+          const e = this._warnList[warns.length];
+          e.x = Math.min(window.innerWidth - 30, Math.max(30, p.x));
+          e.y = Math.min(window.innerHeight - 70, Math.max(60, p.y));
+          e.kind = w.y < 1.5 ? 'low' : 'mid';
+          warns.push(e);
+        }
       }
       if (warns.length > this.warnCount) this.audio.warning();
     }
@@ -1593,7 +1672,12 @@ export class Game {
     const sunK = Math.min(1, this.env.light.intensity / 6) * (1 - night);
     this.dust.uniforms.uTint.value.setRGB(0.12, 0.14, 0.2).lerp(this._dustDay.copy(this.env.light.color).multiplyScalar(0.55).addScalar(0.5), sunK);
 
-    this.rig.update(realDt, { aspect: this.renderer.aspect, dragonY: this.y, speed: this.speed, rage: this.rageK });
+    const ro = this._rigOpts;
+    ro.aspect = this.renderer.aspect;
+    ro.dragonY = this.y;
+    ro.speed = this.speed;
+    ro.rage = this.rageK;
+    this.rig.update(realDt, ro);
     this.env.update(realDt, this.camera, this.time, this.rig.blend);
     this.renderer.renderer.toneMappingExposure = this.env.exposure;
     // heat haze sits on the horizon line, wherever the camera pitch puts it on screen

@@ -125,20 +125,24 @@ export class City {
     this.signGeo = new THREE.BoxGeometry(1.6, 0.5, 0.08);
   }
 
+  /** A building for the obstacle pool: built once per pooled object, restyled on every later spawn. */
   makeBuilding(rand) {
-    const v = this.buildingVariants[Math.floor(rand() * this.buildingVariants.length)];
     const g = new THREE.Group();
-    const m = new THREE.Mesh(v.geometry, this.facade);
+    const m = new THREE.Mesh(this.buildingVariants[0].geometry, this.facade);
     m.castShadow = m.receiveShadow = true;
-    g.add(m);
-    if (v.sign) {
-      const s = new THREE.Mesh(this.signGeo, this.sign);
-      s.position.set(-0.4, 4.35, 0);
-      s.rotation.y = Math.PI / 2;
-      g.add(s);
-    }
-    g.userData = { w: v.w, h: v.h };
+    const s = new THREE.Mesh(this.signGeo, this.sign);
+    s.position.set(-0.4, 4.35, 0);
+    s.rotation.y = Math.PI / 2;
+    g.add(m, s);
+    this.restyleBuilding(g, rand);
     return g;
+  }
+
+  restyleBuilding(g, rand) {
+    const v = this.buildingVariants[Math.floor(rand() * this.buildingVariants.length)];
+    g.children[0].geometry = v.geometry;
+    g.children[1].visible = !!v.sign;
+    g.userData = { w: v.w, h: v.h };
   }
 
   // ------------------------------------------------------------------ cars
@@ -163,10 +167,15 @@ export class City {
 
   makeCar(rand) {
     const g = new THREE.Group();
-    const body = new THREE.Mesh(this.carVariants[Math.floor(rand() * this.carVariants.length)], this.paint);
+    const body = new THREE.Mesh(this.carVariants[0], this.paint);
     body.castShadow = true;
     g.add(body, new THREE.Mesh(this.carGlass, this.glass), new THREE.Mesh(this.carLights, this.lightsMat));
+    this.restyleCar(g, rand);
     return g;
+  }
+
+  restyleCar(g, rand) {
+    g.children[0].geometry = this.carVariants[Math.floor(rand() * this.carVariants.length)];
   }
 
   // ------------------------------------------------------------------ skyline behind the track

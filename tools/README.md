@@ -9,7 +9,8 @@ Development helpers (not part of the game build). The test tools start their own
 | `npm run test:hitbox` (`tools/hitcheck.mjs`) | Every monster keeps the Kaiju's hitbox heights: running top, ducking top and airborne bottom within `--tol 0.05`. |
 | `npm run test:audio` (`tools/audiocheck.mjs`) | Renders the real mix offline (the score through every theme and intensity, then every big sound at once over the loudest music) and checks each section is audible and nothing clips. |
 | `npm run test:data` (`tools/datatest.mjs`) | Leaderboard and save safety against `mock-claude.js` with injected failures: a row is never replaced or blindly overwritten, view-only viewers are told, old local saves still load. |
-| `npm run test:perf` (`tools/perf.mjs`) | Reference scenes played in real time with `?perf`: frame-time percentiles, frames over 33/50 ms, CPU and GPU time, draw calls, triangles, load steps. `--save file.json`, `--baseline file.json` (see `docs/perf/`), `--scenes a,b`. Run it alone. |
+| `npm run test:perf` (`tools/perf.mjs`) | Reference scenes played in real time with `?perf`: frame-time percentiles, frames over 33/50 ms (with what each long frame did: new shader programs, update and render time), CPU and GPU time, draw calls, triangles, load steps. `--save file.json`, `--baseline file.json` (see `docs/perf/`), `--scenes a,b`. Run it alone. |
+| `npm run test:load` (`tools/loadtime.mjs`) | Builds the single file, serves it over HTTP and loads it three times in one browser: the first visit, then repeat visits (texture cache, browser shader cache), with the time of every loading step. |
 | `npm run artifact` | Single-file build, then `make-artifact.mjs` (page body for the claude.ai artifact: title first, no html/head/body wrapper) and `scan-artifact.mjs` (no external URLs or network APIs, gzip within `--gzip-kb 400`) into `dist-single/artifact.html`. |
 
 | File | Use |
