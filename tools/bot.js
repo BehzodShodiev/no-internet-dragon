@@ -1,12 +1,14 @@
 (() => {
   const g = window.__game;
   const SMASHER = !!window.__smasher; // smash everything breakable, not just what must be smashed
-  window.__bot = { jumps: 0, ducks: 0, deaths: 0, maxScore: 0, breaths: 0, smashes: 0, log: [] };
+  window.__bot = { jumps: 0, ducks: 0, deaths: 0, maxScore: 0, breaths: 0, smashes: 0, glides: 0, glideTime: 0, drops: 0, log: [] };
   const B = window.__bot;
   const FLY = ['ptero', 'heli', 'shell', 'missile'];
-  let holding = false, ducking = false;
+  let holding = false, ducking = false, last = performance.now();
   function tick() {
     requestAnimationFrame(tick);
+    const now = performance.now(), frame = (now - last) / 1000;
+    last = now;
     if (window.__botStop) return;
     if (g.state === 'over') {
       B.deaths++; B.maxScore = Math.max(B.maxScore, g.score | 0);
@@ -35,6 +37,19 @@
       else if (t < 0.17 && g.grounded && front > -1.5) { g.input.jump = true; g._onJump(); B.jumps++; holding = true; }
     }
     if (holding && g.grounded && g.vy === 0) holding = false;
+    // Gliders (Mothra): past the top of a jump, keep holding (gliding) only while nothing is due before
+    // she would land, plus a moment to jump again; otherwise let go and drop on the normal arc. A glide is
+    // always at or above the normal arc, so whatever is under her already is cleared either way.
+    if (holding && g.monster.glide && !g.grounded && g.vy <= 0) {
+      const tLand = g.y / 6.5 + 0.2;
+      const due = g.obstacles.active.some((q) => {
+        if (q.dead || q.reflected) return false;
+        const front = q.x - q.width / 2 - 2.6;
+        return front > 0 && front < (v + q.vx) * (tLand + 0.35);
+      });
+      if (due) { holding = false; B.drops++; }
+      else { if (!g.gliding) B.glides++; B.glideTime += frame; }
+    }
     if (!holding) g.input.jump = false;
     g.input.duck = wantDuck;
     if (wantDuck && !ducking) B.ducks++;

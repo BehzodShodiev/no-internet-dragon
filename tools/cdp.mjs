@@ -9,7 +9,17 @@ const steps = JSON.parse(fs.readFileSync(stepsFile, 'utf8'));
 fs.mkdirSync(outdir, { recursive: true });
 const port = 9300 + Math.floor(Math.random() * 500);
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-prof-'));
-const chrome = spawn('C:/Users/behzod.shadiev/AppData/Local/Google/Chrome/Application/chrome.exe', [
+// Chrome: $CHROME, else the usual install locations (per-user or machine-wide)
+const chromePath = [
+  process.env.CHROME,
+  path.join(os.homedir(), 'AppData/Local/Google/Chrome/Application/chrome.exe'),
+  'C:/Program Files/Google/Chrome/Application/chrome.exe',
+  'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/google-chrome',
+].find((p) => p && fs.existsSync(p));
+if (!chromePath) { console.log('Chrome not found: set CHROME to its path'); process.exit(1); }
+const chrome = spawn(chromePath, [
   '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
   `--window-size=${w},${h}`, '--autoplay-policy=no-user-gesture-required', '--no-first-run', '--no-default-browser-check', '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', 'about:blank',

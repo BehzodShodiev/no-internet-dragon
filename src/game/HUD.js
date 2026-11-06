@@ -286,6 +286,7 @@ export class HUD {
     const art = {
       kaiju: 'linear-gradient(135deg, #2e3530, #3cc8ff)',
       ghidorah: 'linear-gradient(135deg, #8a5a14, #ffd166)',
+      mothra: 'radial-gradient(circle at 80% 22%, #9fe8ff 0 5%, #ffd65c 6% 9%, #1a0e08 10% 13%, transparent 14%), linear-gradient(135deg, #5c3418, #e08a26 55%, #f6c44a)',
     };
     const lock = '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2z"/></svg>';
     this.monsterCards = monsters.map((m) => {

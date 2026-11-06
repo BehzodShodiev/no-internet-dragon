@@ -23,7 +23,7 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Jump (hold for higher) | `Space` / `↑` / `W` | tap, or the ↑ button |
+| Jump (hold for higher; as Mothra, keep holding to glide) | `Space` / `↑` / `W` | tap, or the ↑ button |
 | Smash | `→` / `D` / `E` | claw button |
 | Duck / fast-fall | `↓` / `S` | swipe down, or the ↓ button |
 | Atomic breath (when the meter is full) | `F` / `X` / `Shift` | flame button |
@@ -62,7 +62,7 @@ Some tanks fire a shell first; a tank only fires when the track between it and t
 
 **Seeing at night.** After dark (and in the volcano's dusk) the dragon's glowing plates throw a soft forward light that picks out what's coming. Pterodactyls are painted in warm rust and cream with a glowing rim around their silhouettes (helicopters get a subtler one), cars carry head and tail lights, steel hedgehogs have a hazard-yellow beam and a blinking red beacon, the city's street lights and warm ambient keep the road readable, and the volcano's lava veins stay well clear of the paler ash path the dragon runs on.
 
-The autopilot used for testing (full jumps, fixed reflexes, no fast-fall, smashing only what can't be jumped) survives every level in both views, so every pattern can be cleared.
+The autopilot used for testing (full jumps, fixed reflexes, no fast-fall, smashing only what can't be jumped) survives every level in both views, so every pattern can be cleared. It does so with every monster; as Mothra it also glides whenever nothing is due before it would land.
 
 ## Skins
 
@@ -86,8 +86,9 @@ Everyone starts with the **Kaiju** (the dragon above, with its skins). Other mon
 | --- | --- | --- |
 | Kaiju | from the start | seven skins |
 | **King Ghidorah** | down 5 gunships in total | three heads (staggered so all three read in 2D), two tails, golden wings, gravity beams from every mouth; wide build: hitbox 115%, score ×1.15 |
+| **Mothra** | collect 500 crystals in total | a giant moth that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing wing patterns, a wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score ×0.9 |
 
-More are planned (Mothra, Rodan, Gigan, Destoroyah, SpaceGodzilla); see `docs/ROADMAP.md`.
+Every monster has the Kaiju's hitbox heights (running, ducking and in the air), so size never makes anything easier or harder to clear; only the width varies. More are planned (Rodan, Gigan, Destoroyah, SpaceGodzilla); see `docs/ROADMAP.md`.
 
 ## Company leaderboard
 
@@ -134,6 +135,7 @@ src/
   entities/Boss.js        the gunship boss
   entities/Skins.js       the seven dragon skins and their builds
   entities/Monsters.js    the monster roster and unlock goals
+  entities/Moth.js        Mothra: painted fan-shaped wings, IK legs, same interface as the dragon
   game/Progress.js        lifetime stats and unlocks
   entities/Crystals.js    instanced radiation crystals
   world/City.js           city biome: skyline, road, buildings and cars, procedural lit windows

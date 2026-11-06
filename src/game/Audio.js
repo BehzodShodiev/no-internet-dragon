@@ -126,6 +126,32 @@ export class AudioEngine {
     this.footstep(1.6);
   }
 
+  /** A giant wing's downstroke: a soft, low push of air. intensity 0..1.3 */
+  flutter(intensity = 1) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    const n = this._noiseSrc();
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(260, t);
+    f.frequency.exponentialRampToValueAtTime(900, t + 0.07);
+    f.frequency.exponentialRampToValueAtTime(180, t + 0.3);
+    const g = ctx.createGain();
+    this._env(g, t, 0.05, 0.3 * intensity, 0.26);
+    n.connect(f).connect(g).connect(this.master);
+    n.start(t, Math.random());
+    n.stop(t + 0.4);
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(55, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.2);
+    const og = ctx.createGain();
+    this._env(og, t, 0.04, 0.12 * intensity, 0.18);
+    o.connect(og).connect(this.master);
+    o.start(t);
+    o.stop(t + 0.3);
+  }
+
   // Chrome-style milestone beep
   milestone() {
     if (!this.ctx) return;

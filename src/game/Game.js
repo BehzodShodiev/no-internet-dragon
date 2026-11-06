@@ -8,6 +8,7 @@ import { HUD } from './HUD.js';
 import { Leaderboard } from './Leaderboard.js';
 import { Stages, LEVELS } from './Stages.js';
 import { Dragon, DRAGON_SCALE } from '../entities/Dragon.js';
+import { Moth } from '../entities/Moth.js';
 import { Obstacles, SMASH, SILENT } from '../entities/Obstacles.js';
 import { Crystals } from '../entities/Crystals.js';
 import { Boss } from '../entities/Boss.js';
@@ -62,6 +63,9 @@ export const CFG = {
   smashRecover: 0.12, // cooldown after a smash that connected
   smashMiss: 0.38, // cooldown after a whiff, so mashing the key is a gamble
   hitStop: 0.05, // freeze-frame on impact
+  // gliding (Mothra): holding jump on the way down
+  glideGravity: 0.3, // share of gravity while gliding
+  glideFall: 6.5, // fastest fall while gliding (units/s)
   loopSpeed: 0.1, // every completed stage loop raises the speed cap by this much (up to 4 loops)
   bossEvery: 7000, // after the first gunship, the next comes once you've scored this many more points
 };
@@ -94,6 +98,8 @@ export class Game {
     this.preview = false; // the owner trying a locked monster
     this.skinIndex = Math.min(SKINS.length - 1, Math.max(0, SKINS.findIndex((k) => k.id === store.get('dragon.skin', 'classic'))));
     this.skin = SKINS[this.skinIndex];
+    this.scoreK = this.skin.hitX; // score factor of the current look (see _applyLook)
+    this.gliding = false;
     this.localBests = LEVELS.map((lv) => Number(store.get(lv.id === 1 ? 'dragon.hi' : `dragon.hi.${lv.id}`, 0)) || 0);
     this.state = 'loading';
     this.time = 0;
@@ -201,9 +207,14 @@ export class Game {
     this.boss.mat.color.set(lv.id === 3 ? 0xff9a80 : lv.id === 2 ? 0xc4d0ff : 0xffffff);
   }
 
-  /** Points for a scoring event: the combo multiplier and the skin's build both apply. */
+  /** Points for a scoring event: the combo multiplier and the skin's build (or the monster's score factor) both apply. */
   _pts(base) {
-    return Math.round(base * this.mult * this.skin.hitX);
+    return Math.round(base * this.mult * this.scoreK);
+  }
+
+  /** The current monster's roar (Mothra's is a high cry). */
+  _roar(duration, pitch = 1) {
+    this.audio.roar(duration, pitch * (this.monster.voice ?? 1));
   }
 
   /** Picks a skin (only between runs); the dragon on screen changes straight away. */
@@ -219,6 +230,7 @@ export class Game {
   /** The current monster's colours, breath and build (the Kaiju's come from its chosen skin). */
   _applyLook() {
     this.skin = this.monster.skins ? SKINS[this.skinIndex] : this.monster.look;
+    this.scoreK = this.skin.score ?? this.skin.hitX;
     this.dragon.setSkin(this.skin);
     this.beam.setColors(this.skin.beam);
     for (const b of this.sideBeams) b.setColors(this.skin.beam);
@@ -230,8 +242,9 @@ export class Game {
     if (!m || (!this.progress.isUnlocked(m) && !preview)) return;
     let d = this.dragons[m.id];
     if (!d) {
-      d = this.dragons[m.id] = new Dragon(this.tex.scales, m.variant);
+      d = this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant);
       d.onFootstep = (leg, fx) => this._footstep(leg, fx);
+      d.onWingbeat = (k) => this._wingbeat(k);
       this.scene.add(d.group);
     }
     for (const k in this.dragons) this.dragons[k].group.visible = k === m.id;
@@ -534,11 +547,19 @@ export class Game {
     this.state = 'intro';
     this.introT = 0;
     this.hud.show('title', false);
-    this.audio.roar(1.7);
+    this._roar(1.7);
     this.rig.shake(0.35);
     this._resetRun();
     this.pace = 0;
     this.pendingBanner = { t: 0.4, sub: `LEVEL ${this.level.id} · STAGE 1`, title: this.stages.current.title, kind: '' };
+    this._monsterTip();
+  }
+
+  /** One-time hint for a monster that plays differently. */
+  _monsterTip() {
+    if (!this.monster.glide) return;
+    const touch = matchMedia('(pointer: coarse)').matches;
+    this._tip('glide', touch ? 'Mothra: keep your finger down after a jump to glide. Let go to drop.' : 'Mothra: keep holding jump after the top of a jump to glide. Let go to drop.');
   }
 
   _restart() {
@@ -554,8 +575,9 @@ export class Game {
     this.timeScale = 1;
     this.state = 'running';
     this.hud.setScore(0, 0);
-    this.audio.roar(0.9, 1.15);
+    this._roar(0.9, 1.15);
     this.hud.banner(`LEVEL ${this.level.id} · STAGE 1`, this.stages.current.title);
+    this._monsterTip();
   }
 
   /** From the game-over screen back to the level picker. */
@@ -728,7 +750,7 @@ export class Game {
     this.breathT = CFG.breathTime;
     this.bossHitThisBreath = false;
     this.audio.breath(CFG.breathTime);
-    this.audio.roar(1.1, 0.85);
+    this._roar(1.1, 0.85);
     this.rig.shake(0.5);
     this.flash = 0.1;
     this.flashColor.setRGB(0.25, 0.6, 1.0);
@@ -850,7 +872,7 @@ export class Game {
     this.progress.add('rages');
     this.rageT = CFG.rageTime;
     this.hud.banner('', 'KAIJU RAGE!', 'rage');
-    this.audio.roar(1.5, 0.75);
+    this._roar(1.5, 0.75);
     this.rig.shake(0.7);
     this.flash = 0.3;
     this.flashColor.setRGB(1, 0.35, 0.08);
@@ -957,6 +979,37 @@ export class Game {
     this.audio.footstep(0.55 + 0.45 * k + 0.5 * this.rageK);
     if (this.rageK > 0.5) this.rig.shake(0.12);
     else if (this.rig.blend > 0.5) this.rig.shake(0.04);
+  }
+
+  /** Mothra's downstroke: a soft whoosh, and near the ground the air it pushes down stirs up dust. */
+  _wingbeat(k) {
+    if (this.state !== 'running' && this.state !== 'intro' && this.state !== 'title') return;
+    this.audio.flutter(0.35 + 0.4 * k + 0.3 * this.rageK);
+    if (this.y > 2.5) return;
+    const near = 1 - this.y / 2.5;
+    const n = Math.round((6 + 6 * this.rageK) * k * near);
+    for (let i = 0; i < n; i++) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      this.dust.emit(
+        0.4 + Math.random() * 1.6, 0.1, side * (0.8 + Math.random() * 2.2),
+        -1.5 - Math.random() * 2, 0.4 + Math.random() * 0.8, side * (1.5 + Math.random() * 2.5),
+        0.8 + Math.random() * 0.6, 0.5, 2 + Math.random() * 1.2, 0.6, 0.5, 0.37, 0.18 * near, 2.2, 0.3, 1
+      );
+    }
+  }
+
+  /** Glittering scale dust off Mothra's wings: a faint trail in flight, a storm while the beam fires. */
+  _wingGlitter(dt, breathAmt) {
+    if (this.state !== 'running' && this.state !== 'intro') return;
+    this._glitterAcc = (this._glitterAcc || 0) + dt * (2.5 + 55 * breathAmt + 20 * this.rageK);
+    const [r, g, b] = this.skin.spark;
+    while (this._glitterAcc > 1) {
+      this._glitterAcc--;
+      const p = this.dragon.wingDust(this._v);
+      const blow = breathAmt > 0.05 ? 6 + Math.random() * 8 : 0; // the beam's wind carries it forward
+      this.sparks.emit(p.x, p.y, p.z, blow + (Math.random() - 0.5) * 1.5, (Math.random() - 0.6) * 1.2, (Math.random() - 0.5) * 1.5,
+        0.5 + Math.random() * 0.7, 0.09, 0.02, r, g, b, 0.9, 1.2, 0.4, 1);
+    }
   }
 
   _dustBurst(strength, n, spread) {
@@ -1072,7 +1125,7 @@ export class Game {
     this.slowT = 1.1;
     this.flash = 0.35;
     this.flashColor.setRGB(1, 0.75, 0.35);
-    this.audio.roar(1.6, 0.9);
+    this._roar(1.6, 0.9);
   }
 
   /** Batted-back shells and missiles: they hit the gunship, or the tank that fired them. */
@@ -1186,7 +1239,7 @@ export class Game {
       const step = this.speed * dt * CFG.scoreRate;
       const before = Math.floor(this.dist / 100);
       this.dist += step;
-      this.score += step * this.mult * this.skin.hitX; // slimmer builds are easier, so they score a little less
+      this.score += step * this.mult * this.scoreK; // slimmer builds (and gliding) are easier, so they score a little less
       if (Math.floor(this.dist / 100) > before) {
         this.audio.milestone();
         this.hud.milestone();
@@ -1231,13 +1284,17 @@ export class Game {
 
     // vertical physics
     if (playing || this.state === 'dying') {
+      // gliding monsters (Mothra) fall slowly while jump is held on the way down
+      this.gliding = !!this.monster.glide && playing && !this.grounded && this.vy < 0 && this.input.jump && !this.input.duck;
       if (!this.grounded) {
         let g = CFG.gravity * (this.input.duck ? CFG.fastFall : 1);
+        if (this.gliding) g *= CFG.glideGravity;
         if (this.cutPending && this.y >= CFG.minCutHeight && this.vy > CFG.jumpCut) {
           this.vy = CFG.jumpCut;
           this.cutPending = false;
         }
         this.vy -= g * dt;
+        if (this.gliding) this.vy = Math.max(this.vy, -CFG.glideFall);
         this.y += this.vy * dt;
         if (this.y <= 0) {
           this.y = 0;
@@ -1245,9 +1302,15 @@ export class Game {
           this.grounded = true;
           this.cutPending = false;
           if (this.state !== 'dying') {
-            this.audio.land();
-            this._dustBurst(0.8 + this.rageK, 18, 1.8);
-            this.rig.shake(this.rig.blend > 0.5 ? 0.22 : 0.08);
+            if (this.dragon.flyer) {
+              // a flyer settles back onto her legs: a puff of air, no thud
+              this.audio.flutter(0.8);
+              this._dustBurst(0.5 + this.rageK, 10, 2.4);
+            } else {
+              this.audio.land();
+              this._dustBurst(0.8 + this.rageK, 18, 1.8);
+              this.rig.shake(this.rig.blend > 0.5 ? 0.22 : 0.08);
+            }
           }
         }
       }
@@ -1314,7 +1377,9 @@ export class Game {
       roar: this.state === 'intro' ? smooth(0, 0.25, this.introT) * smooth(1.6, 0.9, this.introT) : 0,
       breath: breathAmt,
       bite: this.smashT > 0 ? 1 : 0,
+      glide: this.gliding,
     });
+    if (this.dragon.wingDust) this._wingGlitter(dt, breathAmt);
 
     // Godzilla-style plate glow: idles softly, charges up, flares when firing, burns during rage
     const night = this.env.nightness;
