@@ -157,11 +157,13 @@ export class BreathBeam {
           n = 0.5 * n + 0.5 * noise(vec2(vUv.x * 22.0, along * 70.0 - uTime * 50.0));
           // pow(0, y) can yield NaN on D3D (ANGLE) at the silhouette, so keep the base positive
           float vv = clamp(vView, 1e-4, 1.0);
-          float core = pow(vv, 2.5);
+          // the sheath carries the skin's breath colour; only a narrow core runs white-hot (a wide hot
+          // core tone-maps every breath to the same pale white)
+          float core = smoothstep(0.72, 1.0, vv);
           float edge = pow(vv, 0.7);
-          vec3 c = mix(uColA, uColB, core) * (0.5 + n);
+          vec3 c = uColA * (0.55 + 0.9 * n) * 2.6 + uColB * core * (0.8 + 0.4 * n) * 2.4;
           float a = edge * (0.45 + 0.55 * n) * smoothstep(1.0, 0.85, along) * uIntensity;
-          gl_FragColor = vec4(c * a * 3.0, a);
+          gl_FragColor = vec4(c * a, a);
         }`,
       transparent: true,
       depthWrite: false,
@@ -180,7 +182,7 @@ export class BreathBeam {
   setColors(beam) {
     this.uniforms.uColA.value.set(...beam[0]);
     this.uniforms.uColB.value.set(...beam[1]);
-    const [r, g, b] = beam[1];
+    const [r, g, b] = beam[0]; // the light takes the sheath's colour (the core is near white for every skin)
     const m = Math.max(r, g, b);
     this.light.color.setRGB(r / m, g / m, b / m);
   }

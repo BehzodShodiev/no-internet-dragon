@@ -144,15 +144,27 @@ export class Dragon {
     });
     // skins like Burning glow between the scales: the darkest grooves of the scale texture light up,
     // in broad patches rather than everywhere
-    this.skinUniforms = { uCrack: { value: new THREE.Color(0, 0, 0) } };
+    // spots: some scales glow (bioluminescence); sheen: a coloured rim at grazing angles; irid: an oil-slick
+    // rainbow at grazing angles. All zero for skins that don't use them.
+    this.skinUniforms = {
+      uCrack: { value: new THREE.Color(0, 0, 0) }, uSpot: { value: new THREE.Color(0, 0, 0) },
+      uSheen: { value: new THREE.Color(0, 0, 0) }, uIrid: { value: 0 },
+    };
     this.skinMat.onBeforeCompile = (s) => {
       Object.assign(s.uniforms, this.skinUniforms);
       s.fragmentShader = s.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 uCrack;')
+        .replace('#include <common>', '#include <common>\nuniform vec3 uCrack;\nuniform vec3 uSpot;\nuniform vec3 uSheen;\nuniform float uIrid;')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           float groove = smoothstep(0.22, 0.06, dot(sampledDiffuseColor.rgb, vec3(0.3, 0.59, 0.11)));
           float crackPatch = smoothstep(0.35, 0.7, texture2D(map, vMapUv * 0.13 + 0.31).g); // ('patch' is reserved in GLSL)
-          totalEmissiveRadiance += uCrack * groove * (0.35 + 0.65 * crackPatch) * 3.0;`);
+          totalEmissiveRadiance += uCrack * groove * (0.35 + 0.65 * crackPatch) * 3.0;
+          float lumS = dot(sampledDiffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+          float spotPick = smoothstep(0.7, 0.78, texture2D(map, vMapUv * 0.37 + 0.71).g);
+          totalEmissiveRadiance += uSpot * smoothstep(0.16, 0.34, lumS) * spotPick * 2.6;
+          float fres = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 4.0);
+          totalEmissiveRadiance += uSheen * fres * 0.9;
+          vec3 irid = 0.5 + 0.5 * cos(6.2832 * (fres * 1.4 + vec3(0.0, 0.33, 0.67)));
+          totalEmissiveRadiance += irid * fres * uIrid * 0.8;`);
     };
     const g = new Uint8Array(64 * 4);
     for (let i = 0; i < 64; i++) {
@@ -710,6 +722,9 @@ export class Dragon {
     this.skinMat.roughness = skin.rough;
     this.skinMat.envMapIntensity = 0.9 + skin.metal * 1.2;
     this.skinUniforms.uCrack.value.set(skin.crack).multiplyScalar(skin.crackGain ?? 1);
+    this.skinUniforms.uSpot.value.set(skin.spot ?? 0);
+    this.skinUniforms.uSheen.value.set(skin.sheen ?? 0);
+    this.skinUniforms.uIrid.value = skin.irid ?? 0;
     this.plateTint.setRGB(...skin.plate);
     this.glowColor.set(skin.glow);
     this.eyeColor.set(skin.eye);

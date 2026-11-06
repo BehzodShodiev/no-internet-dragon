@@ -371,18 +371,25 @@ export class HUD {
 
   /** Builds the skin swatches (title card and game-over screen); onPick(index) fires on a click. */
   buildSkins(skins, onPick) {
+    const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
     const hide = (k) => {
+      if (k.flat != null) return hex(k.flat);
       const c = [0x38 / 255, 0x40 / 255, 0x38 / 255].map((v, i) => Math.min(255, Math.round(255 * v * k.skin[i] * 1.6)));
       return `rgb(${c.join(',')})`;
     };
-    const glow = (k) => `#${k.glow.toString(16).padStart(6, '0')}`;
+    const glow = (k) => hex(k.glow);
+    const breath = (k) => {
+      const [r, g, b] = k.beam[0], m = Math.max(r, g, b);
+      return `rgb(${[r, g, b].map((v) => Math.round((255 * v) / m)).join(',')})`;
+    };
     const make = (k, i) => {
       const b = el('button', 'skin-sw');
       b.type = 'button';
       b.setAttribute('role', 'radio');
       b.title = `${k.name}: ${k.note}`;
       b.setAttribute('aria-label', k.name);
-      b.style.background = `linear-gradient(135deg, ${hide(k)} 0 52%, ${glow(k)} 52% 100%)`;
+      // hide, plate glow and breath, corner to corner
+      b.style.background = `linear-gradient(135deg, ${hide(k)} 0 46%, ${glow(k)} 46% 72%, ${breath(k)} 72% 100%)`;
       b.addEventListener('click', (e) => { e.stopPropagation(); onPick(i); b.blur(); });
       return b;
     };

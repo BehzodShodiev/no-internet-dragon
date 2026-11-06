@@ -292,6 +292,9 @@ export class Game {
     this.dragon.setSkin(this.skin);
     this.beam.setColors(this.skin.beam);
     for (const b of this.sideBeams) b.setColors(this.skin.beam);
+    // the breath's own colour (its sheath, normalised): scorch marks and the impact light use it
+    const [r, g, b] = this.skin.beam[0], m = Math.max(r, g, b);
+    (this.breathColor ||= new THREE.Color()).setRGB(r / m, g / m, b / m);
   }
 
   /** Switches monster between runs. Locked ones need preview (owner only). Models are built on first use. */
@@ -1745,13 +1748,13 @@ export class Game {
           this.scorchT = (this.scorchT || 0) - dt;
           if (this.scorchT <= 0) {
             this.scorchT = 0.06;
-            this.blasts.mark(tx, mouth.z + (Math.random() - 0.5) * 0.3, 1.3 + Math.random() * 0.5, this.dragon.glowColor);
+            this.blasts.mark(tx, mouth.z + (Math.random() - 0.5) * 0.3, 1.3 + Math.random() * 0.5, this.breathColor);
           }
         }
         this.breathGlow = breathAmt;
         if (this.blastLightT <= 0) {
           this.blastLight.position.set(tx - 1, sy + 1.2, mouth.z + 1.2);
-          this.blastLight.color.copy(this.dragon.glowColor);
+          this.blastLight.color.copy(this.breathColor);
         }
       }
       if (this.breathT <= 0) {
