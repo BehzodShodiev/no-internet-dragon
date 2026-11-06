@@ -46,7 +46,7 @@
             <div class="bar"><div id="charge-fill"></div></div>
           </div>
           <div id="rage" class="meter">
-            <div class="label">KAIJU RAGE <span class="sub">FROM CRYSTALS</span></div>
+            <div class="label">KAIJU RAGE <span class="sub" id="rage-sub">FROM CRYSTALS</span></div>
             <div class="bar"><div id="rage-fill"></div></div>
           </div>
           <div id="rival" class="rival hidden" aria-live="polite">
@@ -70,6 +70,9 @@
           <svg viewBox="0 0 24 24"><path d="M12 19l-7-7h4V5h6v7h4z" /></svg>
         </button>
         <div class="right">
+          <button class="tbtn rage" data-act="rage" aria-label="Kaiju Rage">
+            <svg viewBox="0 0 24 24"><path d="M12 2l2.6 6.3L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.7z" /></svg>
+          </button>
           <button class="tbtn smash" data-act="smash" aria-label="Smash">
             <svg viewBox="0 0 24 24"><path d="M4 14c2-6 7-10 15-10-3 2-5 4-6 6 3-1 6-1 8 0-4 1-7 3-8 6 2 0 4 1 5 3-5-1-9 0-12 3 0-3 0-5-2-8z" /></svg>
           </button>

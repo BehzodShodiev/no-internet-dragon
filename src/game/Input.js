@@ -30,7 +30,7 @@ export class Input {
           ArrowRight: 'smash', KeyD: 'smash', KeyE: 'smash', ArrowLeft: 'prev', KeyA: 'prev',
           Digit1: 'level1', Digit2: 'level2', Digit3: 'level3', Numpad1: 'level1', Numpad2: 'level2', Numpad3: 'level3',
           KeyV: 'view', KeyC: 'view', KeyP: 'pause', Escape: 'pause', KeyM: 'mute', Enter: 'start', KeyQ: 'quality',
-          KeyL: 'board', KeyK: 'skin', KeyB: 'monsters',
+          KeyL: 'board', KeyK: 'skin', KeyB: 'monsters', KeyR: 'rage', KeyG: 'rage',
         };
         if (map[e.code]) {
           e.preventDefault();

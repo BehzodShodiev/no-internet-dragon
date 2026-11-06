@@ -115,7 +115,14 @@ export class HUD {
     this._restartAnim(this.el.combo, 'broken');
   }
 
-  setRage(v, active, ending) {
+  setRage(v, active, ending, ready = false) {
+    if (ready !== this._rageReady) {
+      this._rageReady = ready;
+      this.el.rage.classList.toggle('ready', ready);
+      this.el.hud.classList.toggle('rage-ready', ready);
+      const sub = document.getElementById('rage-sub');
+      if (sub) sub.textContent = ready ? (matchMedia('(pointer: coarse)').matches ? 'READY · TAP' : 'READY · PRESS R') : 'FROM CRYSTALS';
+    }
     const k = v.toFixed(3);
     if (k !== this._rageK) { this._rageK = k; this.el.rageFill.style.transform = `scaleX(${k})`; }
     if (active !== this._rageA) { this._rageA = active; this.el.rage.classList.toggle('active', active); }

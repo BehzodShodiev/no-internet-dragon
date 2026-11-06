@@ -233,13 +233,14 @@ export function respond(o) {
   const y = o.ty ?? o.y;
   return y > 2.5 ? 'under' : y > 1.5 ? 'duck' : 'jump';
 }
-// Spawn weights per stage (the desert keeps Chrome's original table in _pickType).
+// Spawn weights per stage: [type, weight, from loop] (the desert keeps Chrome's original table in
+// _pickType). Rows with a loop number only join from that loop on, so every loop adds threats.
 const TABLES = {
-  army: [['tank', 22], ['heli', 20], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4]],
-  city: [['car', 30], ['building', 30], ['heli', 18], ['hedgehog', 14]],
-  siege: [['building', 22], ['tank', 20], ['heli', 18], ['car', 16], ['hedgehog', 12], ['fuel', 6]],
-  ashlands: [['lava', 22], ['rock', 16], ['meteor', 14], ['ptero', 18], ['pillar', 14]],
-  inferno: [['tank', 16], ['heli', 16], ['lava', 14], ['meteor', 12], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6]],
+  army: [['tank', 22], ['heli', 20], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4], ['tower', 8, 1], ['tank', 8, 2]],
+  city: [['car', 30], ['building', 30], ['heli', 18], ['hedgehog', 14], ['tank', 12, 1]],
+  siege: [['building', 22], ['tank', 20], ['heli', 18], ['car', 16], ['hedgehog', 12], ['fuel', 6], ['building', 8, 1]],
+  ashlands: [['lava', 22], ['rock', 16], ['meteor', 14], ['ptero', 18], ['pillar', 14], ['meteor', 10, 1]],
+  inferno: [['tank', 16], ['heli', 16], ['lava', 14], ['meteor', 12], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6], ['pillar', 6, 1]],
 };
 
 export class Obstacles {
@@ -313,6 +314,7 @@ export class Obstacles {
     this.lastType = null;
     this.repeat = 0;
     this.nextGap = 30;
+    this.uidSeq = 0;
   }
 
   /**
@@ -357,6 +359,10 @@ export class Obstacles {
     o.reflected = false;
     o.clanged = false;
     o.cried = false; // its incoming sound (screech, whistle) has played
+    o.uid = ++this.uidSeq; // crystals arcing over it are tied to it (Crystals.release)
+    o.smashLead = null; // its distance from the jaws when the smash was pressed (PERFECT timing)
+    o.lateDuck = false; // the monster ducked under it at the last moment (an honest close call)
+    o.z0 = 0; // 3D only: where it comes in from the side before locking onto the track
     o.vm = 0;
     o.smash = SMASH[type];
     o.tall = !!TALL[type];
@@ -652,7 +658,7 @@ export class Obstacles {
       }
       o.x -= (speed + o.vx) * dt;
       o.t += dt;
-      o.group.position.set(o.x, o.y, 0);
+      o.group.position.set(o.x, o.y + (o.z0 && (o.type === 'heli' || o.type === 'ptero') ? 3 * smooth(50, 110, o.x) * hard : 0), o.z0 ? o.z0 * smooth(50, 110, o.x) * hard : 0);
       if (o.type === 'ptero') this._animatePtero(o);
       else if (o.type === 'heli') this._animateHeli(o);
       else if (o.type === 'tank') this._updateTank(o, dt, speed);
@@ -676,15 +682,18 @@ export class Obstacles {
     if (table) {
       // 3D adds flyers, as it does in the desert
       let total = 0;
-      for (const [t, w] of table) if (t !== avoid) total += t === 'heli' ? w + 8 * hard : w;
+      for (const [t, w, from = 0] of table) if (t !== avoid && from <= this.cycle) total += t === 'heli' ? w + 8 * hard : w;
       let acc = r * total;
-      for (const [t, w] of table) {
-        if (t === avoid) continue;
+      for (const [t, w, from = 0] of table) {
+        if (t === avoid || from > this.cycle) continue;
         acc -= t === 'heli' ? w + 8 * hard : w;
         if (acc <= 0) return t;
       }
       return table[0][0];
     }
+    // later desert loops bring the army in: helicopters from loop 2, tanks from loop 3
+    if (this.cycle >= 1 && r > 0.93 && avoid !== 'heli') return 'heli';
+    if (this.cycle >= 2 && r > 0.87 && r <= 0.93 && avoid !== 'tank') return 'tank';
     const pteroOk = dist > 250 - 130 * hard;
     if (pteroOk && r < 0.2 + 0.1 * hard) return 'ptero';
     if (r < 0.5) return 'cactusS';
@@ -739,6 +748,11 @@ export class Obstacles {
     if (!flyer) o.y = 0;
     o.x = (this.firstSpawnX ?? SPAWN_X) + o.width / 2;
     this.firstSpawnX = null;
+    // 3D: traffic, tanks and flyers can come in from the side; they lock onto the track by x = 50, long
+    // before they matter, and 2D never sees the offset. Anything that will fire stays on the track.
+    if (!o.shooter && (type === 'car' || type === 'tank' || type === 'heli' || type === 'ptero') && this.rand() < 0.55) {
+      o.z0 = (this.rand() < 0.5 ? -1 : 1) * (type === 'car' ? 10 : type === 'tank' ? 14 : 18);
+    }
     // Flyers move faster than the ground scrolls and would eat into the gap behind the previous
     // obstacle on the way in; push them back by that amount plus time to land and duck.
     if (flyer) o.x += o.vx * (SPAWN_X / Math.max(1, speed)) + speed * 0.3;
@@ -778,7 +792,7 @@ export class Obstacles {
     }
     if (r < 0.4) {
       // arc over the obstacle: a full jump timed over its middle collects all five
-      for (let k = -2; k <= 2; k++) cr.add(o.x + k * 0.09 * speed, arcY(k * 0.09 * speed));
+      for (let k = -2; k <= 2; k++) cr.add(o.x + k * 0.09 * speed, arcY(k * 0.09 * speed), o.uid);
     } else if (r < 0.6) {
       if (end - start < 3) return;
       const n = Math.min(6, Math.floor((end - start) / 1.5) + 1);
@@ -786,7 +800,7 @@ export class Obstacles {
     } else if (r < 0.72) {
       if (end - start < 2 * half + 2) return;
       const c = (start + end) / 2; // high trio: worth an extra jump in the gap, if there's time
-      for (let k = -1; k <= 1; k++) cr.add(c + k * 0.09 * speed, arcY(k * 0.09 * speed));
+      for (let k = -1; k <= 1; k++) cr.add(c + k * 0.09 * speed, arcY(k * 0.09 * speed), 0, true);
     }
   }
 

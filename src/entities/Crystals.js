@@ -24,8 +24,18 @@ export class Crystals {
     this._s = new THREE.Vector3(1, 1, 1);
   }
 
-  add(x, y) {
-    if (this.items.length < MAX) this.items.push({ x, y, t: Math.random() * 6 });
+  /**
+   * owner: the obstacle a crystal arcs over (its uid; 0 = none). optional: a bonus crystal that doesn't
+   * break the chain when it's skipped (the high trios that need an extra jump).
+   */
+  add(x, y, owner = 0, optional = false) {
+    if (this.items.length < MAX) this.items.push({ x, y, t: Math.random() * 6, owner, optional, mag: 0 });
+  }
+
+  /** The obstacle under these crystals was smashed or burned: they fly to the monster instead of being lost. */
+  release(owner) {
+    if (!owner) return;
+    for (const c of this.items) if (c.owner === owner) c.mag = 1;
   }
 
   clear() {
@@ -46,8 +56,9 @@ export class Crystals {
       const c = items[i];
       c.x -= speed * dt;
       c.t += dt;
-      if (magnet > 0 && c.x < 9 && c.x > rear - 1) {
-        const k = 1 - Math.exp(-dt * 9 * magnet);
+      const pull = Math.max(magnet, c.mag);
+      if (pull > 0 && c.x < (c.mag ? 45 : 9) && c.x > rear - 1) {
+        const k = 1 - Math.exp(-dt * 9 * pull);
         c.x += (0.6 - c.x) * k;
         c.y += (1.6 - c.y) * k;
       }
@@ -65,7 +76,7 @@ export class Crystals {
         onPick?.(c);
       } else if (n && c.x < rear - R) {
         items.splice(i, 1);
-        onMiss?.(c);
+        if (!c.optional) onMiss?.(c); // skipping a bonus crystal costs nothing
       } else if (c.x < -30) {
         items.splice(i, 1);
       }

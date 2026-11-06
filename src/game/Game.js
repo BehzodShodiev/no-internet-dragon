@@ -66,6 +66,12 @@ export const CFG = {
   smashRecover: 0.12, // cooldown after a smash that connected
   smashMiss: 0.38, // cooldown after a whiff, so mashing the key is a gamble
   hitStop: 0.05, // freeze-frame on impact
+  jumpBuffer: 0.12, // a jump pressed this long before landing still happens, the moment you land
+  // smash mastery
+  perfectLead: 1.2, // pressed when the target was within this many units of the jaws: PERFECT
+  smashStreak: 1.5, // seconds between smashes that still count as a DOUBLE / TRIPLE SMASH
+  smashRage: 0.6, // each smash fills Kaiju Rage like this share of a crystal
+  lateDuck: 0.25, // a duck counts as a close call only if it started this close (seconds) to the threat
   // gliding (Mothra): holding jump on the way down
   glideGravity: 0.3, // share of gravity while gliding
   glideFall: 6.5, // fastest fall while gliding (units/s)
@@ -149,12 +155,13 @@ export class Game {
     this._sideMouths = [new THREE.Vector3(), new THREE.Vector3()];
     // per-frame scratch (the main loop allocates nothing)
     this.coarseMQ = matchMedia('(pointer: coarse)');
+    this.reducedMotion = store.get('dragon.motion', matchMedia('(prefers-reduced-motion: reduce)').matches ? 'reduce' : 'full') === 'reduce';
     this._scr = { x: 0, y: 0, behind: false };
     this._warnList = Array.from({ length: 8 }, () => ({ x: 0, y: 0, kind: 'low' }));
     this._warns = [];
     this._homes = { wide: { x: 15.5, y: 4.6 }, tall: { x: 9, y: 5.4 } };
     this._dst = { speed: 0, grounded: true, vy: 0, ducking: false, running: false, dead: false, roar: 0, breath: 0, bite: 0, glide: false };
-    this._rigOpts = { aspect: 1, dragonY: 0, speed: 0, rage: 0 };
+    this._rigOpts = { aspect: 1, dragonY: 0, speed: 0, rage: 0, dead: 0, boss: 0 };
     this._crystalOpts = { magnet: 0, onPick: (c) => this._pickCrystal(c), onMiss: () => this._missCrystal() };
     this._bossCtx = {
       home: null, yaw: 0,
@@ -203,6 +210,12 @@ export class Game {
     this.smashHit = false;
     this.hitStopT = 0;
     this.smashes = 0;
+    this.jumpBuf = 0;
+    this.rageReady = false;
+    this.streak = 0;
+    this.streakT = 0;
+    this.breathKills = 0;
+    this.perfects = 0;
     this.charge = CFG.breathStart;
     this.toldReady = false;
     this.breathT = 0;
@@ -357,6 +370,7 @@ export class Game {
     const scene = (this.scene = new THREE.Scene());
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.3, 6000);
     this.rig = new CameraRig(this.camera);
+    this.rig.reducedMotion = this.reducedMotion;
     this.rig.mode = this.settings.view;
     this.rig.raw = this.rig.blend = this.settings.view === '3d' ? 1 : 0;
     this.rig.intro = 1;
@@ -585,6 +599,7 @@ export class Game {
     inp.on('jumpRelease', () => { if (!this.grounded && this.vy > 0) this.cutPending = true; });
     inp.on('duck', () => { if (this.state === 'title') this.audio.init(); });
     inp.on('breath', () => this._breath());
+    inp.on('rage', () => this._triggerRage());
     // on the title screen → / ← and 1-3 pick the level; in a run → smashes
     inp.on('smash', () => (this.state === 'title' ? this.selectLevel(this.levelIndex + 1) : this._smash()));
     inp.on('prev', () => { if (this.state === 'title') this.selectLevel(this.levelIndex - 1); });
@@ -651,13 +666,19 @@ export class Game {
       return;
     }
     if (this.state === 'paused') return this.togglePause(false);
-    if ((this.state === 'running' || this.state === 'intro') && this.grounded) {
-      this.vy = CFG.jumpV;
-      this.grounded = false;
-      this.cutPending = !this.input.jump;
-      this.audio.jump();
-      this._dustBurst(0.4, 10, 1.2);
+    if (this.state === 'running' || this.state === 'intro') {
+      if (this.grounded) this._doJump();
+      else this.jumpBuf = CFG.jumpBuffer; // pressed a moment early: jump on landing
     }
+  }
+
+  _doJump() {
+    this.jumpBuf = 0;
+    this.vy = CFG.jumpV;
+    this.grounded = false;
+    this.cutPending = !this.input.jump;
+    this.audio.jump();
+    this._dustBurst(0.4, 10, 1.2);
   }
 
   _startIntro() {
@@ -871,6 +892,7 @@ export class Game {
   // ------------------------------------------------------------------ gameplay helpers
   _breath() {
     if (this.state !== 'running' || this.breathT > 0) return;
+    this.breathKills = 0;
     if (this.charge < 1) {
       // tell the player why nothing happened instead of silently ignoring the key
       this.audio.denied();
@@ -893,6 +915,28 @@ export class Game {
     this.smashT = CFG.smashTime;
     this.smashHit = false;
     this.audio.swing();
+    // how close each target is right now: pressed at the last instant, the bite is PERFECT
+    const mx = this.dragon.getMouthWorld(this._mouth).x;
+    for (const o of this.obstacles.active) {
+      const lead = o.x - o.width / 2 - mx;
+      o.smashLead = lead > -2 && lead < 6 ? lead : null;
+    }
+  }
+
+  /** A short vibration on phones (skipped when motion is reduced). */
+  _haptic(ms) {
+    if (this.reducedMotion || !this.coarseMQ.matches) return;
+    try { navigator.vibrate?.(ms); } catch { /* not allowed */ }
+  }
+
+  /** Ducking just started: threats about to pass overhead make it a late (honest) close call. */
+  _markLateDucks() {
+    const v = Math.max(1, this.speed);
+    for (const o of this.obstacles.active) {
+      if (o.dead || this.obstacles.respond(o) !== 'duck') continue;
+      const t = (o.x - o.width / 2 - 2.6) / (v + o.vx);
+      if (t < CFG.lateDuck) o.lateDuck = true;
+    }
   }
 
   /** The jaws met something: break it, bat it back, or clang off it. */
@@ -919,11 +963,23 @@ export class Game {
     this.smashHit = true;
     this.smashes++;
     this.progress.add('smashes');
-    const pts = this._pts(o.smash);
+    this.crystals.release(o.uid); // crystals over it fly to you instead of breaking the chain
+    // mastery: last-instant timing, smashes in quick succession, biting a flyer out of the air
+    const perfect = o.smashLead != null && o.smashLead < CFG.perfectLead;
+    this.streak = this.time - this.streakT < CFG.smashStreak ? this.streak + 1 : 1;
+    this.streakT = this.time;
+    const sky = !this.grounded && this.obstacles.flies(o);
+    const bonus = Math.min(2, (perfect ? 2 : 1) * (this.streak >= 3 ? 1.5 : this.streak === 2 ? 1.25 : 1) * (sky ? 1.5 : 1));
+    const pts = this._pts(o.smash * bonus);
     this.score += pts;
-    this._setChain(this.chain + 1);
-    this._popup(`SMASH +${pts}`, o.x, o.y + (o.tall ? 4.2 : 2.2), 'kill');
-    this.hitStopT = CFG.hitStop;
+    this._setChain(this.chain + (perfect ? 2 : 1));
+    this._addRage(CFG.smashRage / this.level.rageCrystals);
+    const label = perfect ? 'PERFECT' : sky ? 'SKY BITE' : this.streak >= 3 ? 'TRIPLE SMASH' : this.streak === 2 ? 'DOUBLE SMASH' : 'SMASH';
+    this._popup(`${label} +${pts}`, o.x, o.y + (o.tall ? 4.2 : 2.2), perfect || sky || this.streak >= 2 ? 'close' : 'kill');
+    if (perfect) this.perfects++;
+    this.hitStopT = perfect ? CFG.hitStop * 1.8 : CFG.hitStop;
+    this.rig.punch(perfect ? 1 : 0.5);
+    this._haptic(perfect ? 25 : 14);
     this._debris(o);
     if (o.type === 'fuel' || o.type === 'tank') this._blast(o.x, o.y + 1, o.type === 'fuel' ? 1.8 : 1);
     else {
@@ -1001,10 +1057,22 @@ export class Game {
     this.hud.setCombo(m, hi ? (c - lo) / (hi - lo) : 1);
   }
 
+  /** The rage meter fills; when full it waits for the player (R / G, or the rage button on touch). */
   _addRage(v) {
-    if (this.rageT > 0) return;
+    if (this.rageT > 0 || this.rageReady) return;
     this.rage = Math.min(1, this.rage + v);
-    if (this.rage >= 1 && this.state === 'running') this._startRage();
+    if (this.rage >= 1 && this.state === 'running') {
+      this.rageReady = true;
+      this.audio.charged();
+      this._tip('rage', this.coarseMQ.matches ? 'KAIJU RAGE ready: tap the rage button when you need it!' : 'KAIJU RAGE ready: press R when you need it!');
+    }
+  }
+
+  /** Unleashes a full rage meter. */
+  _triggerRage() {
+    if (!this.rageReady || this.state !== 'running') return;
+    this.rageReady = false;
+    this._startRage();
   }
 
   _startRage() {
@@ -1043,6 +1111,8 @@ export class Game {
 
   _passObstacle(o, clearance) {
     let c = this.chain + 1;
+    // ducking under a mid flyer always clears it closely; only a last-moment duck earns the CLOSE!
+    if (this.obstacles.respond(o) === 'duck' && !o.lateDuck) clearance = Infinity;
     if (clearance < CFG.closeCall) {
       c++;
       const pts = this._pts(CFG.closePoints);
@@ -1205,6 +1275,7 @@ export class Game {
   }
 
   _explode(o, points = CFG.killPoints) {
+    this.crystals.release(o.uid);
     this._blast(o.x, o.y + 0.8, o.type === 'tank' || o.type === 'fuel' ? 1.4 : 1);
     if (o.type === 'building') this.audio.glass();
     this._debris(o);
@@ -1226,7 +1297,8 @@ export class Game {
       return;
     }
     this.obstacles.stage = st.key;
-    const banner = { t: delay, sub: `STAGE ${this.stages.number}`, title: st.title, kind: '' };
+    const loop = this.stages.cycle;
+    const banner = { t: delay, sub: loop && this.stages.index === 0 ? `LOOP ${loop + 1} · STAGE ${this.stages.number}` : `STAGE ${this.stages.number}`, title: st.title, kind: '' };
     if (delay) this.pendingBanner = banner;
     else this.hud.banner(banner.sub, banner.title);
   }
@@ -1343,7 +1415,7 @@ export class Game {
     if ((this.state === 'title' || this.state === 'over') && !this.sim && now - (this._lastDraw || 0) < 30) return;
     this._lastDraw = now;
     perf?.renderBegin();
-    this.renderer.render(this.time, this.flash, this.flashColor);
+    this.renderer.render(this.time, this.reducedMotion ? this.flash * 0.25 : this.flash, this.flashColor);
     perf?.renderEnd();
   }
 
@@ -1445,7 +1517,10 @@ export class Game {
         this.hud.toast(this.toastAfter.text, 2600);
         this.toastAfter = null;
       }
-      if (next) this._enterStage(next);
+      if (next) {
+        this.obstacles.cycle = Math.max(this.obstacles.cycle, this.stages.cycle); // every loop is tighter and busier
+        this._enterStage(next);
+      }
       this.obstacles.update(dt, this.speed, this.dist, hard);
       this._updateReflected();
       this._checkTips();
@@ -1481,6 +1556,7 @@ export class Game {
           this.vy = 0;
           this.grounded = true;
           this.cutPending = false;
+          if (this.state !== 'dying') this._haptic(8);
           if (this.state !== 'dying') {
             if (this.dragon.flyer) {
               // a flyer settles back onto her legs: a puff of air, no thud
@@ -1494,7 +1570,14 @@ export class Game {
           }
         }
       }
+      const wasDucking = this.ducking;
       this.ducking = this.grounded && this.input.duck && playing;
+      if (this.ducking && !wasDucking) this._markLateDucks();
+      // a buffered jump fires the moment the monster lands
+      if (this.jumpBuf > 0) {
+        this.jumpBuf -= dt;
+        if (this.grounded && this.state === 'running' && this.jumpBuf > 0) this._doJump();
+      }
     }
 
     // atomic breath
@@ -1512,11 +1595,20 @@ export class Game {
       const nSide = this.dragon.getSideMouths(this._sideMouths);
       this.sideBeams.forEach((b, i) => b.set(this._sideMouths[i], i < nSide ? len * 0.85 : 0, 0.4 + 0.1 * Math.sin(this.time * 33 + i),
         i < nSide ? breathAmt : 0, this.time, aim + (i ? 0.05 : -0.05)));
+      let burned = 0;
       for (const o of this.obstacles.active) {
         if (!o.dead && o.x - o.width / 2 < mouth.x + len && o.x > mouth.x - 2) {
           o.dead = true;
           this._explode(o);
+          burned++;
         }
+      }
+      if (burned) {
+        // burning keeps the combo going, and a big sweep says so
+        this._setChain(this.chain + burned);
+        const before = this.breathKills;
+        this.breathKills += burned;
+        if (before < 3 && this.breathKills >= 3) this._popup(`MULTI-BURN ×${this.breathKills}`, mouth.x + 6, mouth.y + 2.4, 'close');
       }
       if (boss.state === 'fight' && !this.bossHitThisBreath && breathAmt > 0.5) {
         const b = boss.box(this._bossBox);
@@ -1588,7 +1680,12 @@ export class Game {
       } else this.smashCool = Math.max(0, this.smashCool - dt);
       const hit = this.debug ? null : this.obstacles.collide(this.boxes, n);
       if (hit) {
-        if (this.rageT > 0 || this.graceT > 0) {
+        if (this.rageT > 0 && hit.smash === 'reflect') {
+          // in Kaiju Rage, shells and missiles that touch you are batted straight back
+          this.obstacles.reflect(hit, this.speed);
+          this.audio.reflect();
+          this._popup('RAGE REFLECT!', hit.x, hit.y + 1.2, 'close');
+        } else if (this.rageT > 0 || this.graceT > 0) {
           hit.dead = true; // Kaiju Rage smashes straight through
           this._explode(hit);
         } else this._die();
@@ -1677,6 +1774,8 @@ export class Game {
     ro.dragonY = this.y;
     ro.speed = this.speed;
     ro.rage = this.rageK;
+    ro.dead = this.state === 'dying' || this.state === 'over' ? 1 : 0;
+    ro.boss = this.boss.active ? 1 : 0;
     this.rig.update(realDt, ro);
     this.env.update(realDt, this.camera, this.time, this.rig.blend);
     this.renderer.renderer.toneMappingExposure = this.env.exposure;
@@ -1689,7 +1788,7 @@ export class Game {
     this.flash *= Math.exp(-realDt * 4);
     this.hud.setScore(this.score, realDt);
     this.hud.setCharge(this.charge, ready && running);
-    this.hud.setRage(this.rage, this.rageT > 0, this.rageT > 0 && this.rageT < 1.2);
+    this.hud.setRage(this.rage, this.rageT > 0, this.rageT > 0 && this.rageT < 1.2, this.rageReady && running);
     if (running) this._updateRival(realDt);
   }
 }

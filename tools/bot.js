@@ -28,6 +28,8 @@
     if (g.state !== 'running') return;
     B.maxScore = Math.max(B.maxScore, g.score | 0);
     if (g.boss.state === 'fight' && g.charge >= 1 && g.breathT <= 0) { g._breath(); B.breaths++; }
+    // Kaiju Rage (on demand): the bot saves it for the gunship
+    if (g.rageReady && g.boss.state === 'fight') { g._triggerRage(); B.rages = (B.rages || 0) + 1; }
     const v = g.speed;
     const obs = g.obstacles;
     // threats still to deal with, nearest first (flyers stay until they're well past, so a duck is held)

@@ -20,6 +20,20 @@ export class CameraRig {
     this._tgt = new THREE.Vector3();
     this.intro = 0; // 1 = cinematic orbit used on the title screen
     this.reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    this.punchAmp = 0;
+    this.deadK = 0;
+    this.bossK = 0;
+  }
+
+  /** A quick zoom-in kick on impact (a perfect smash, a big hit). */
+  punch(amount) {
+    if (this.reducedMotion) return;
+    this.punchAmp = Math.min(1.5, this.punchAmp + amount);
+  }
+
+  // smooth noise in [-1, 1]: a few incommensurate sines, so shake is a wobble, not static
+  _n(t, seed) {
+    return 0.5 * Math.sin(t + seed * 12.9) + 0.32 * Math.sin(t * 2.31 + seed * 4.7) + 0.18 * Math.sin(t * 4.57 + seed * 7.3);
   }
 
   setMode(mode) {
@@ -36,7 +50,8 @@ export class CameraRig {
     this.shakeAmp = Math.min(1.2, this.shakeAmp + amount);
   }
 
-  update(dt, { aspect, dragonY, speed, rage = 0 }) {
+  /** opts: aspect, dragonY, speed, rage (0..1), dead (dying or game over), boss (a boss fight is on). */
+  update(dt, { aspect, dragonY, speed, rage = 0, dead = 0, boss = 0 }) {
     this.time += dt;
     const target = this.mode === '3d' ? 1 : 0;
     const step = dt / 1.15;
@@ -74,6 +89,17 @@ export class CameraRig {
     // Kaiju Rage: the bigger dragon gets a wider, slightly pulled-back chase
     this._p3.x -= rage * 1.8;
     this._p3.y += rage * 1.1;
+    // boss fights frame the gunship above the track; a death eases in close and low
+    this.bossK += (boss - this.bossK) * (1 - Math.exp(-dt * 1.5));
+    this.deadK += (dead - this.deadK) * (1 - Math.exp(-dt * 2.2));
+    this._p3.y += this.bossK * 0.9;
+    this._t3.y += this.bossK * 1.5;
+    this._t3.x += this.bossK * 3;
+    if (!this.reducedMotion) {
+      this._p3.x += this.deadK * 3.2;
+      this._p3.y -= this.deadK * 1.3;
+      this._p3.z -= this.deadK * 1.6;
+    }
 
     const pos = this._pos.lerpVectors(this._p2, this._p3, b);
     const tgt = this._tgt.lerpVectors(this._t2, this._t3, b);
@@ -82,6 +108,12 @@ export class CameraRig {
     pos.y += mid * 5;
     pos.z += mid * 6;
     let fov = THREE.MathUtils.lerp(fov2, fov3, b) + rage * 4;
+    // a little wider as the run speeds up (3D), a quick zoom kick on impacts
+    if (!this.reducedMotion) {
+      fov += Math.min(1, speed / 30) * 4 * b;
+      this.punchAmp *= Math.exp(-12 * dt);
+      fov -= this.punchAmp * 2.4;
+    }
 
     // title screen: slow cinematic orbit around the dragon (front three-quarter view)
     const k = this.intro;
@@ -93,13 +125,15 @@ export class CameraRig {
       fov = THREE.MathUtils.lerp(fov, 42, k);
     }
 
-    // shake
+    // shake: smooth noise rather than per-frame random jumps (the same at any frame rate), with a little roll
     this.shakeAmp *= Math.exp(-5 * dt);
+    let roll = 0;
     if (this.shakeAmp > 0.001) {
-      const s = this.shakeAmp;
-      pos.x += (Math.random() - 0.5) * s * 0.5;
-      pos.y += (Math.random() - 0.5) * s * 0.5;
-      tgt.y += (Math.random() - 0.5) * s * 0.3;
+      const s = this.shakeAmp, t = this.time * 26;
+      pos.x += this._n(t, 1) * s * 0.3;
+      pos.y += this._n(t, 2) * s * 0.3;
+      tgt.y += this._n(t, 3) * s * 0.18;
+      roll = this._n(t, 4) * s * 0.035;
     }
 
     const cam = this.camera;
@@ -109,6 +143,7 @@ export class CameraRig {
     cam.near = 0.3;
     cam.far = 6000;
     cam.lookAt(tgt);
+    if (roll) cam.rotateZ(roll);
     cam.updateProjectionMatrix();
   }
 }

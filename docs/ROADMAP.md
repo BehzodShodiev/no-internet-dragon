@@ -9,7 +9,7 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 | A | Foundations: bug fixes, leaderboard data safety, seeded runs, fast-sim bot matrix, hitbox and data gates, perf instrumentation | **Done** 2026-11-06, artifact v12 |
 | B | Sound and music: original adaptive score, mix buses and limiter, soundscape, per-monster voices | **Done** 2026-11-06, artifact v13 |
 | C | Performance overhaul: scenery LOD, post chain, IBL reuse, Auto quality v2, pooling, idle rendering, faster loading | **Done** 2026-11-06, artifact v14 |
-| D | Game feel and fair score economy: jump buffer, Rage on demand, combo fairness, smash mastery, loops add threats, camera and juice | Not started |
+| D | Game feel and fair score economy: jump buffer, Rage on demand, combo fairness, smash mastery, loops add threats, camera and juice | **Done** 2026-11-06, artifact v15 |
 | E | Looks I: grading, atmosphere, local lights, shadows, VFX and destruction | Not started |
 | F | Menus, UX and onboarding: transitions, settings and pause menu, game over v2, unlock reveal, Bootcamp, accessibility | Not started |
 | G | Signature abilities, Rodan (roster part 3), monster fidelity | Not started |
@@ -43,6 +43,15 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Results (`docs/perf/partC.json` vs part A): GPU time per frame Desert 3D 6.06 → 2.81 ms, City Siege 4.4 → 2.83 ms, Volcano gunship with Rage and breath 4.34 → 3.85 ms, Desert night 2D 4.38 → 2.84 ms, phone Medium 5.0 → 2.6 ms; no frames over 50 ms in any scene. `npm test` passes (matrix 36/36).
 - Deferred: merging the pterodactyl's 11 meshes moves to part E (its look is reworked there); the first visit's shader compile (about 1.8 s) remains the largest loading cost.
 - Test fixes: the matrix now injects the bot before the run starts (a late injection on a busy machine let the fast simulation reach the first obstacle unattended), and `?perf` ignores frames in the 0.5 s after a reset (the DevTools call that resets can stall a frame).
+
+### Results of part D
+
+- Controls: 0.12 s jump buffer (`Game._onJump` / `_doJump`; a buffered press fires on landing). Kaiju Rage on demand: a full meter waits (`rageReady`), `R`/`G` or a touch button that appears when ready (`_triggerRage`); in Rage, touched shells and missiles are reflected; the bot saves Rage for gunship fights.
+- Combo economy: crystals carry the uid of the obstacle they arc over (`Crystals.add(x, y, owner, optional)`), and `Crystals.release(uid)` homes them in when it is smashed, burned or raged through; high trios are optional (skipping them no longer breaks the chain); every obstacle the breath burns adds to the chain, with a MULTI-BURN pop-up at three.
+- Smash mastery: PERFECT when the target was within 1.2 units of the jaws at the press (stamped as `o.smashLead` in `_smash`), DOUBLE/TRIPLE SMASH within 1.5 s, SKY BITE on flyers in mid-air, bonuses capped at 2×; each smash adds 0.6 crystals' worth of Rage. Duck close calls only count when the duck started within 0.25 s of the threat (`_markLateDucks`, `o.lateDuck`).
+- Loops: `obstacles.cycle` now follows `stages.cycle` at every stage change (tightening and armed tanks no longer wait for a gunship kill); spawn-table rows take a "from loop" value (`TABLES` in `Obstacles.js`), and the Desert brings helicopters from loop 2 and tanks from loop 3; new loops are announced (LOOP n). In 3D, some cars, tanks and flyers swing in from the side (`o.z0`), locked onto the track by x = 50 (2D never sees it; collisions ignore z).
+- Camera and juice (`CameraRig`): smooth-noise shake with roll, speed-based FOV, a zoom punch on smashes, a death cam, gunship framing; haptics on phones; everything honours `dragon.motion` (default: the system's reduced-motion setting), which also tones flashes down.
+- Gates: matrix 36/36 at 0 deaths; data, audio and hitbox pass. Score impact on identical seeds (bot points per game second, part C → D): Kaiju 142.2 → 142.2, Ghidorah 163.0 → 165.9 (+2%), Mothra 86.9 → 72.7 (−16%, the bot no longer gets Rage automatically), all −3%. Within the +10% guard, so existing leaderboard scores stay comparable (human players who smash and burn more will score somewhat more).
 
 ## Monster roster
 
