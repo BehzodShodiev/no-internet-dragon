@@ -6,7 +6,9 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 import { FXAAShader } from '../gfx/FXAAShader.js';
 
+// verylow: for weak laptops and old phones: 75% resolution, no shadows, no bloom, no edge smoothing
 export const QUALITY = {
+  verylow: { pr: 0.75, msaa: 0, shadow: 0, soft: false, bloom: false, fxaa: false, terrain: 120, density: 0.2 },
   low: { pr: 1.0, msaa: 0, shadow: 1024, soft: false, bloom: false, terrain: 200, density: 0.4 },
   medium: { pr: 1.5, msaa: 2, shadow: 2048, soft: true, bloom: true, terrain: 400, density: 0.7 },
   high: { pr: 2.0, msaa: 4, shadow: 2048, soft: true, bloom: true, terrain: 400, density: 1 },
@@ -189,7 +191,7 @@ export class Renderer {
     this.grade = new ShaderPass(new THREE.RawShaderMaterial(GradeShader));
     composer.addPass(this.grade);
     // Low has no MSAA: FXAA smooths edges for the price of one cheap full-screen pass
-    this.fxaa = q.msaa ? null : new ShaderPass(FXAAShader);
+    this.fxaa = q.msaa || q.fxaa === false ? null : new ShaderPass(FXAAShader);
     if (this.fxaa) composer.addPass(this.fxaa);
     this.composer = composer;
     this.resize();
@@ -208,7 +210,9 @@ export class Renderer {
     }
     if (this.topPreset == null && this.scene) this.topPreset = name;
     if (this.light) {
-      this.light.shadow.mapSize.set(q.shadow, q.shadow);
+      // shadows off on Very Low (a whole pass saved; lit materials rebuild once, between runs)
+      this.light.castShadow = q.shadow > 0;
+      if (q.shadow) this.light.shadow.mapSize.set(q.shadow, q.shadow);
       if (this.light.shadow.map) {
         this.light.shadow.map.dispose();
         this.light.shadow.map = null;
@@ -256,13 +260,13 @@ export class Renderer {
     const g = [...this.gpuTimes].sort((a, b) => a - b);
     const gpu = g.length >= 10 ? g[Math.floor(g.length / 2)] : null;
     const gpuBound = gpu == null || gpu > 0.7 * p50;
-    const order = ['low', 'medium', 'high'];
+    const order = ['verylow', 'low', 'medium', 'high'];
     if (p50 > budget && gpuBound) {
       this.goodTime = 0;
       if (this.scale > 0.62) {
         this.scale = Math.max(0.6, this.scale - 0.1);
         this.resize();
-      } else if (this.qualityName !== 'low' && this.wantPreset !== order[order.indexOf(this.qualityName) - 1]) {
+      } else if (this.qualityName !== 'verylow' && this.wantPreset !== order[order.indexOf(this.qualityName) - 1]) {
         this.wantPreset = order[order.indexOf(this.qualityName) - 1];
         this.onPreset?.(this.wantPreset);
       }

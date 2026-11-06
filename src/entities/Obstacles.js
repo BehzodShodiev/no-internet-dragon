@@ -321,21 +321,26 @@ export class Obstacles {
     // Flyers get a warm rim glow around their silhouettes (stronger after dark) so they read against
     // any sky. The shared uniform is set from the night level in update().
     this.rim = { uRim: { value: 0.5 } };
-    const rimmed = (m, color) => {
+    this.rimBoost = 1;
+    // rim colour and a body shade are uniforms per material, so a world can restyle them without a recompile
+    const rimmed = (m, color, shade = { value: 1 }) => {
+      const u = { uRimC: { value: color }, uShade: shade };
       m.onBeforeCompile = (sh) => {
-        Object.assign(sh.uniforms, this.rim);
+        Object.assign(sh.uniforms, this.rim, u);
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uRim;')
+          .replace('#include <common>', '#include <common>\nuniform float uRim;\nuniform vec3 uRimC;\nuniform float uShade;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uShade;')
           .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
             float rimF = pow(1.0 - abs(dot(normalize(normal), normalize(vViewPosition))), 2.5);
-            totalEmissiveRadiance += vec3(${color.r.toFixed(3)}, ${color.g.toFixed(3)}, ${color.b.toFixed(3)}) * rimF * uRim;`);
+            totalEmissiveRadiance += uRimC * rimF * uRim;`);
       };
       return m;
     };
-    const rimC = new THREE.Color(1.0, 0.78, 0.5);
+    const rimC = (this.pteroRimC = new THREE.Color(1.0, 0.78, 0.5));
+    this.pteroShade = { value: 1 };
     this.pteroMats = {
-      skin: rimmed(new THREE.MeshStandardMaterial({ normalMap: tex.scales.normalMap, vertexColors: true, roughness: 0.7 }), rimC),
-      membrane: rimmed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }), rimC),
+      skin: rimmed(new THREE.MeshStandardMaterial({ normalMap: tex.scales.normalMap, vertexColors: true, roughness: 0.7 }), rimC, this.pteroShade),
+      membrane: rimmed(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide }), rimC, this.pteroShade),
       eye: new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffbb33, emissiveIntensity: 2.5, roughness: 0.25 }),
     };
 
@@ -363,6 +368,16 @@ export class Obstacles {
    * seed: the run's seed. Every spawn draws from its own stream (seed, spawn index), so the sequence of
    * types and variants is the same for everyone on that seed even when speeds (and so gaps) differ.
    */
+  /** Flyers must read against every world. In the volcano a warm rim and an orange-lit hide vanished
+   *  against the lava, so there pterodactyls turn into dark silhouettes with a bright, icy rim. */
+  setBiome(name) {
+    const volc = name === 'volcano';
+    if (volc) this.pteroRimC.setRGB(0.32, 0.66, 1.0);
+    else this.pteroRimC.setRGB(1.0, 0.78, 0.5);
+    this.pteroShade.value = volc ? 0.32 : 1;
+    this.rimBoost = volc ? 1.5 : 1;
+  }
+
   reset(seed = this.seed ?? 2024) {
     for (const o of this.active) this._release(o);
     this.active.length = 0;
@@ -729,7 +744,7 @@ export class Obstacles {
   update(dt, speed, dist, hard = 0) {
     this.warnings.length = 0;
     this.time += dt;
-    this.rim.uRim.value = 0.45 + 1.1 * this.night;
+    this.rim.uRim.value = (0.45 + 1.1 * this.night) * this.rimBoost;
     // hedgehog beacons blink, brighter after dark
     this.mil.mats.beacon.emissiveIntensity = (Math.sin(this.time * 7) > 0 ? 1 : 0.15) * (1.5 + 6 * this.night);
     // move & animate

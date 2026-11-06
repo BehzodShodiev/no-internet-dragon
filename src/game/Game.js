@@ -78,9 +78,10 @@ export const CFG = {
   glideGravity: 0.3, // share of gravity while gliding
   glideFall: 6.5, // fastest fall while gliding (units/s)
   loopSpeed: 0.1, // every completed stage loop raises the speed cap by this much (up to 4 loops)
-  bossEvery: 7000, // after the first gunship, the next comes once you've scored this many more points
+  bossEvery: 14000, // after the first gunship, the next comes once you've scored this many more points (was 7000: too often)
 };
 
+const qualityLabel = (name) => (name === 'verylow' ? 'VERY LOW' : name.toUpperCase());
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -136,7 +137,7 @@ export class Game {
     this.dayT = 0.035;
     this.settings = {
       view: store.get('dragon.view', '3d'),
-      quality: store.get('dragon.quality', 'auto'),
+      quality: ['auto', 'high', 'medium', 'low', 'verylow'].includes(store.get('dragon.quality', 'auto')) ? store.get('dragon.quality', 'auto') : 'auto',
     };
     this.boxes = Array.from({ length: 8 }, () => new Float32Array(4));
     const params = new URLSearchParams(location.search);
@@ -249,6 +250,7 @@ export class Game {
     this.env.setBiome(lv.biome, instant);
     this.audio.setBiome(lv.biome);
     this.scenery.setBiome(lv.biome);
+    this.obstacles.setBiome(lv.biome);
     this.city.reset();
     if (lv.biome === 'city') this.city.prefill();
     this.volcano.setActive(lv.biome === 'volcano');
@@ -849,7 +851,7 @@ export class Game {
   }
 
   _cycleQuality() {
-    const order = ['auto', 'high', 'medium', 'low'];
+    const order = ['auto', 'high', 'medium', 'low', 'verylow'];
     const next = order[(order.indexOf(this.settings.quality) + 1) % order.length];
     this._setQuality(next, true);
   }
@@ -862,7 +864,7 @@ export class Game {
     this.renderer.scale = mode === 'auto' ? this.renderer.scale : 1;
     this.renderer.setQuality(name);
     this._applyQualityContent(name);
-    const label = mode === 'auto' ? `AUTO · ${name.toUpperCase()}` : mode.toUpperCase();
+    const label = mode === 'auto' ? `AUTO · ${qualityLabel(name)}` : qualityLabel(mode);
     this.hud.setQuality(label);
     if (announce) this.hud.toast(`Graphics: ${label}`);
   }
@@ -872,7 +874,7 @@ export class Game {
     if (this.settings.quality !== 'auto' || name === this.renderer.qualityName) return;
     this.renderer.applyPreset(name);
     this._applyQualityContent(name);
-    this.hud.setQuality(`AUTO · ${name.toUpperCase()}`);
+    this.hud.setQuality(`AUTO · ${qualityLabel(name)}`);
   }
 
   _applyQualityContent(name) {
