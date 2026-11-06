@@ -206,6 +206,10 @@ export function buildPterodactyl(materials) {
 
 const SPAWN_X = 120;
 const DESPAWN_X = -25;
+// Destroyed structures don't vanish: they leave the active list (nothing collides with them or answers
+// them any more) and sink into the ground with a slight tilt over WRECK_TIME seconds.
+const COLLAPSE = { building: true, tower: true };
+const WRECK_TIME = 0.9;
 export const PTERO_HEIGHTS = [0.95, 1.95, 3.2];
 const SHELL_SPEED = 16; // on top of the ground speed
 const FLYERS = ['ptero', 'heli', 'shell', 'missile'];
@@ -248,6 +252,7 @@ export class Obstacles {
     this.scene = scene;
     this.rand = mulberry32(2024);
     this.active = [];
+    this.wrecks = []; // collapsing structures (see COLLAPSE)
     this.pools = {
       cactusS: [], cactusL: [], rock: [], ptero: [], tank: [], heli: [], shell: [], missile: [],
       tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], pillar: [],
@@ -324,6 +329,8 @@ export class Obstacles {
   reset(seed = this.seed ?? 2024) {
     for (const o of this.active) this._release(o);
     this.active.length = 0;
+    for (const w of this.wrecks) this._release(w);
+    this.wrecks.length = 0;
     this.seed = seed >>> 0;
     this.spawnIdx = 0;
     this.rand = mulberry32(hash32(this.seed, 0x5eed));
@@ -665,9 +672,33 @@ export class Obstacles {
       else if (o.type === 'heli') this._animateHeli(o);
       else if (o.type === 'tank') this._updateTank(o, dt, speed);
       else if (o.type === 'meteor') this._updateMeteor(o, dt, speed);
+      if (o.dead && COLLAPSE[o.type] && o.x > DESPAWN_X) {
+        this.active.splice(i, 1);
+        o.wreckT = 0;
+        o.wreckH = 0;
+        for (const b of o.boxes) o.wreckH = Math.max(o.wreckH, b[3]);
+        o.wreckDir = o.uid & 1 ? 1 : -1; // not from the spawn stream: seeded runs stay identical
+        this.wrecks.push(o);
+        continue;
+      }
       if (o.x < DESPAWN_X || o.dead) {
         this._release(o);
         this.active.splice(i, 1);
+      }
+    }
+    for (let i = this.wrecks.length - 1; i >= 0; i--) {
+      const w = this.wrecks[i];
+      w.wreckT += dt;
+      w.x -= speed * dt;
+      const k = Math.min(1, w.wreckT / WRECK_TIME);
+      const e = k * k * (1.4 - 0.4 * k); // the fall speeds up
+      w.group.position.x = w.x;
+      w.group.position.y = w.y - e * (w.wreckH + 0.4);
+      w.group.rotation.z = 0.22 * e * w.wreckDir;
+      w.group.rotation.x = 0.07 * e * w.wreckDir;
+      if (k >= 1 || w.x < DESPAWN_X) {
+        this._release(w);
+        this.wrecks.splice(i, 1);
       }
     }
     // spawn: measure the free run-in from the furthest obstacle (projectiles don't count)

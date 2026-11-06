@@ -15,6 +15,10 @@ const smooth = (a, b, x) => {
   return t * t * (3 - 2 * t);
 };
 
+// three's tangent-space normal map chunk, with the sand ripples flattened on city ground
+const NORMAL_MAPS = THREE.ShaderChunk.normal_fragment_maps.replace('mapN.xy *= normalScale;', 'mapN.xy *= normalScale * (1.0 - 0.85 * uCity);');
+if (NORMAL_MAPS === THREE.ShaderChunk.normal_fragment_maps) console.warn('Terrain: normal map chunk changed; city ground keeps sand ripples');
+
 export class Terrain {
   constructor(sand, segmentsX = 400) {
     this.noise = createNoise(77);
@@ -26,6 +30,9 @@ export class Terrain {
       uNear: { value: 1 },
       uAsh: { value: 0 }, // 0 = desert sand, 1 = volcanic ash
       uLava: { value: 0 }, // glowing lava veins off the track
+      uCity: { value: 0 }, // 0 = dunes, 1 = Night City: flat ground painted as streets, sidewalks and plazas
+      uNight: { value: 0 }, // street-lamp pools on the sidewalk after dark
+      uLampScroll: { value: 0 }, // scroll % 4004, the same phase City's lamps use
     };
     this.material = new THREE.MeshStandardMaterial({
       map: sand.map,
@@ -134,6 +141,7 @@ export class Terrain {
     const s = scroll % TERRAIN_PERIOD;
     this.uniforms.uScroll.value = s;
     this.uniforms.uNear.value = near;
+    this.uniforms.uLampScroll.value = scroll % 4004;
     this.mesh.position.x = -(s % this.cell);
   }
 
@@ -143,6 +151,7 @@ export class Terrain {
       uniform sampler2D uHeight;
       uniform float uScroll;
       uniform float uNear;
+      uniform float uCity;
       varying float vTH;
       varying vec3 vTW;
       vec3 terrainSample(vec3 wp) {
@@ -159,15 +168,16 @@ export class Terrain {
         /* glsl */ `
         vec3 tWorld = (modelMatrix * vec4(position, 1.0)).xyz;
         vec3 tS = terrainSample(tWorld);
-        vec3 objectNormal = normalize(vec3(-tS.y, 1.0, -tS.z));
+        float tFlat = 1.0 - uCity; // the city stands on flat ground
+        vec3 objectNormal = normalize(vec3(-tS.y * tFlat, 1.0, -tS.z * tFlat));
         `
       )
       .replace(
         '#include <begin_vertex>',
         /* glsl */ `
         vec3 transformed = vec3(position);
-        transformed.y += tS.x;
-        vTH = tS.x;
+        transformed.y += tS.x * tFlat;
+        vTH = tS.x * tFlat;
         vTW = tWorld;
         `
       )
@@ -190,6 +200,9 @@ export class Terrain {
         uniform float uScroll;
         uniform float uAsh;
         uniform float uLava;
+        uniform float uCity;
+        uniform float uNight;
+        uniform float uLampScroll;
         float tHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float tNoise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -200,7 +213,7 @@ export class Terrain {
         '#include <map_fragment>',
         /* glsl */ `
         #include <map_fragment>
-        float tLava = 0.0;
+        float tLava = 0.0, tWet = 0.0, tPool = 0.0;
         {
           // break up tiling with a low-frequency lookup of the same texture
           vec2 wuv = vec2(vTW.x + uScroll, vTW.z);
@@ -220,7 +233,47 @@ export class Terrain {
           float vein = tNoise(wuv * 0.07) * 0.65 + tNoise(wuv * 0.19 + 3.7) * 0.35;
           tLava = (1.0 - smoothstep(0.0, 0.016, abs(vein - 0.5))) * smoothstep(14.0, 22.0, abs(vTW.z)) * uLava;
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.02, 0.01), tLava);
+          // Night City: kerb and sidewalk slabs along the road, then city blocks (pale tiled plazas or dark
+          // lots); a cross street every 64 m (City keeps its buildings out of them) with a zebra crossing
+          // by the road; wet patches that catch the sky; lamp pools on the far sidewalk after dark
+          if (uCity > 0.001) {
+            float cx = vTW.x + uScroll;
+            float cz = vTW.z;
+            float az = abs(cz);
+            float bx = mod(cx, 64.0);
+            float cross = 1.0 - step(10.0, bx);
+            float gh = tHash(floor(vec2(cx, cz) * 3.0));
+            vec2 slab = fract(vec2(cx, cz) / 1.5);
+            float seam = 1.0 - step(0.06, slab.x) * step(0.06, slab.y);
+            vec3 walk = vec3(0.4, 0.39, 0.37) * (0.9 + 0.14 * tHash(floor(vec2(cx, cz) / 1.5))) * (1.0 - 0.35 * seam);
+            walk = mix(walk, vec3(0.62, 0.61, 0.58), step(3.2, az) * (1.0 - step(3.5, az)));
+            vec3 asph = vec3(0.075, 0.078, 0.085) * (0.85 + 0.3 * gh);
+            float bh = tHash(vec2(floor(cx / 64.0), floor(cz / 40.0)) + 7.0);
+            vec2 tile = fract(vec2(cx, cz) / 3.0);
+            float tseam = 1.0 - step(0.04, tile.x) * step(0.04, tile.y);
+            vec3 plaza = mix(vec3(0.3, 0.29, 0.28) * (1.0 - 0.3 * tseam), vec3(0.11, 0.115, 0.12) * (0.9 + 0.2 * gh), step(0.55, bh));
+            float onWalk = 1.0 - step(7.5, az);
+            vec3 cityCol = mix(plaza, walk, onWalk);
+            float zebra = step(3.5, az) * step(az, 6.5) * step(0.5, fract(bx / 1.1)) * step(0.8, bx) * step(bx, 9.2);
+            vec3 street = mix(asph, vec3(0.75, 0.74, 0.7), zebra);
+            street = mix(street, vec3(0.7, 0.6, 0.2), step(abs(bx - 5.0), 0.08) * step(7.5, az) * step(0.5, fract(cz / 3.0)));
+            cityCol = mix(cityCol, street, cross);
+            cityCol *= 0.88 + 0.22 * tNoise(vec2(cx, cz) * 0.35);
+            diffuseColor.rgb = mix(diffuseColor.rgb, cityCol, uCity);
+            tWet = smoothstep(0.58, 0.68, tNoise(vec2(cx, cz) * 0.06 + 1.3)) * (1.0 - 0.6 * onWalk * (1.0 - cross)) * uCity;
+            diffuseColor.rgb *= 1.0 - 0.35 * tWet;
+            float ld = (fract((vTW.x + uLampScroll) / 14.0 + 0.5) - 0.5) * 14.0;
+            tPool = exp(-ld * ld / 12.0) * exp(-(cz + 3.6) * (cz + 3.6) / 5.0) * uNight * uCity;
+          }
         }
+        `
+      )
+      .replace('#include <normal_fragment_maps>', NORMAL_MAPS)
+      .replace(
+        '#include <roughnessmap_fragment>',
+        /* glsl */ `
+        #include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, mix(0.82, 0.16, tWet), uCity);
         `
       )
       .replace(
@@ -228,6 +281,7 @@ export class Terrain {
         /* glsl */ `
         #include <emissivemap_fragment>
         totalEmissiveRadiance += vec3(2.0, 0.55, 0.1) * tLava;
+        totalEmissiveRadiance += vec3(1.0, 0.72, 0.42) * tPool * 0.3;
         `
       );
   }

@@ -181,7 +181,8 @@ export class Scenery {
   setBiome(name) {
     for (const m of this.layers) {
       const k = m.userData.kind;
-      m.userData.hidden = (k === 'cactus' && name !== 'desert') || (k === 'bush' && name === 'volcano');
+      // the city stands on flat paved ground: no desert props (and none floating on dunes that are gone)
+      m.userData.hidden = name === 'city' || (k === 'cactus' && name !== 'desert') || (k === 'bush' && name === 'volcano');
     }
     this.rockMat.color.set(name === 'volcano' ? 0x8a6c62 : 0xffffff);
     this.mesaMat.color.set(name === 'volcano' ? 0x5a3028 : 0xffffff);

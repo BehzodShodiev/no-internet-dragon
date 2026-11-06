@@ -5,7 +5,8 @@ import * as THREE from 'three';
 
 const FIRE_MAX = 10;
 const RING_MAX = 10;
-const SCORCH_MAX = 24;
+const SCORCH_MAX = 48;
+const EMBER = new THREE.Color(1.0, 0.38, 0.08);
 
 export class Blasts {
   /** noiseTex: the shared tileable fbm texture (textures.makeNoiseTexture) for the fireball's turbulence. */
@@ -89,7 +90,8 @@ export class Blasts {
     this.ring.count = 0;
     this.rings = [];
 
-    // ---- scorch marks: a dark, ragged radial stain that scrolls with the ground
+    // ---- scorch marks: a dark, ragged radial stain that scrolls with the ground; fresh marks glow in
+    // the colour of what made them (orange for explosions, the beam's colour for the breath) and cool
     const size = 128, data = new Uint8Array(size * size * 4);
     for (let y = 0; y < size; y++) {
       for (let x = 0; x < size; x++) {
@@ -107,8 +109,28 @@ export class Blasts {
     scorchTex.needsUpdate = true;
     scorchTex.magFilter = scorchTex.minFilter = THREE.LinearFilter;
     const scorchGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-    this.scorch = new THREE.InstancedMesh(scorchGeo, new THREE.MeshBasicMaterial({
-      map: scorchTex, transparent: true, depthWrite: false, opacity: 0.8,
+    this.scorchAge = new THREE.InstancedBufferAttribute(new Float32Array(SCORCH_MAX), 1);
+    this.scorchGlow = new THREE.InstancedBufferAttribute(new Float32Array(SCORCH_MAX * 3), 3);
+    scorchGeo.setAttribute('aAge', this.scorchAge);
+    scorchGeo.setAttribute('aGlow', this.scorchGlow);
+    this.scorch = new THREE.InstancedMesh(scorchGeo, new THREE.ShaderMaterial({
+      uniforms: { map: { value: scorchTex } },
+      vertexShader: /* glsl */ `
+        attribute float aAge; attribute vec3 aGlow;
+        varying vec2 vUv; varying float vAge; varying vec3 vGlow;
+        void main() { vUv = uv; vAge = aAge; vGlow = aGlow; gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0); }`,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D map;
+        varying vec2 vUv; varying float vAge; varying vec3 vGlow;
+        void main() {
+          vec4 t = texture2D(map, vUv);
+          float heat = exp(-vAge * 1.8);
+          // the hottest part is the middle of the mark; it cools from the rim inward
+          float core = smoothstep(0.25, 0.85, t.a);
+          vec3 col = t.rgb * (1.0 - 0.6 * heat) + vGlow * heat * core * 2.6;
+          gl_FragColor = vec4(col, t.a * 0.8);
+        }`,
+      transparent: true, depthWrite: false, fog: false,
       polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     }), SCORCH_MAX);
     this.scorch.frustumCulled = false;
@@ -122,15 +144,21 @@ export class Blasts {
     scene.add(this.fire, this.ring, this.scorch);
   }
 
-  /** An explosion at (x, y): size ~0.5..2. ground: leave a ring and a scorch mark. */
-  burst(x, y, size = 1, ground = true) {
+  /** An explosion at (x, y): size ~0.5..2. ground: leave a ring and a scorch mark. scroll: how much of the
+   *  ground speed the fireball moves with (1 = stays put on the ground, like a collapsing building). */
+  burst(x, y, size = 1, ground = true, scroll = 0.6) {
     if (this.fires.length >= FIRE_MAX) this.fires.shift();
-    this.fires.push({ x, y: y + 0.3 * size, z: 0, t: 0, life: 1.0 + 0.35 * size, r: 1.1 * size, seed: Math.random() * 10 });
+    this.fires.push({ x, y: y + 0.3 * size, z: 0, t: 0, life: 1.0 + 0.35 * size, r: 1.1 * size, seed: Math.random() * 10, scroll });
     if (!ground || y > 2.5) return;
     if (this.rings.length >= RING_MAX) this.rings.shift();
     this.rings.push({ x, z: 0, t: 0, life: 0.45 + 0.1 * size, r: 4.5 * size });
+    this.mark(x, (Math.random() - 0.5) * 0.6, 1.6 + 1.4 * size, EMBER);
+  }
+
+  /** A scorch mark on the ground at (x, z), s units across, glowing in `glow` (a THREE.Color) as it cools. */
+  mark(x, z, s, glow) {
     if (this.scorches.length >= SCORCH_MAX) this.scorches.shift();
-    this.scorches.push({ x, z: (Math.random() - 0.5) * 0.6, s: 1.6 + 1.4 * size, rot: Math.random() * Math.PI * 2 });
+    this.scorches.push({ x, z, s, rot: Math.random() * Math.PI * 2, age: 0, r: glow.r, g: glow.g, b: glow.b });
   }
 
   /** hemi: the scene's hemisphere light, so smoke is lit like everything else (pale by day, dark at night). */
@@ -143,7 +171,7 @@ export class Blasts {
     for (let i = this.fires.length - 1; i >= 0; i--) {
       const f = this.fires[i];
       f.t += dt;
-      f.x -= groundSpeed * dt * 0.6; // drags along a little behind the scrolling ground
+      f.x -= groundSpeed * dt * f.scroll; // 0.6 by default: drags along a little behind the scrolling ground
       f.y += dt * (0.5 + 2.2 * (f.t / f.life)); // the smoke rises faster as it cools
       if (f.t >= f.life) this.fires.splice(i, 1);
     }
@@ -181,15 +209,20 @@ export class Blasts {
     for (let i = this.scorches.length - 1; i >= 0; i--) {
       const s = this.scorches[i];
       s.x -= groundSpeed * dt;
+      s.age += dt;
       if (s.x < -60) this.scorches.splice(i, 1);
     }
     const up = this._up || (this._up = new THREE.Vector3(0, 1, 0));
+    const ga = this.scorchGlow.array;
     for (const s of this.scorches) {
       m.compose(p.set(s.x, 0.02, s.z), q.setFromAxisAngle(up, s.rot), sc.set(s.s, 1, s.s));
-      this.scorch.setMatrixAt(k++, m);
+      this.scorch.setMatrixAt(k, m);
+      this.scorchAge.array[k] = s.age;
+      ga[k * 3] = s.r; ga[k * 3 + 1] = s.g; ga[k * 3 + 2] = s.b;
+      k++;
     }
     this.scorch.count = k;
-    this.scorch.instanceMatrix.needsUpdate = true;
+    this.scorch.instanceMatrix.needsUpdate = this.scorchAge.needsUpdate = this.scorchGlow.needsUpdate = true;
   }
 
   clear() {

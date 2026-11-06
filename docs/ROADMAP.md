@@ -4,6 +4,18 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 
 ## The 100x program
 
+**2026-11-06, after v16: the owner opened the link and said it is not 100x better.** Parts A–D were mostly invisible to a player (data safety, tests, performance, timing), and E1 was a small visible change. The remaining work now runs **visible first**: each publish has to change what a player sees and feels in the first minute. The test, data and perf gates still apply to every publish, but they no longer get parts of their own. New order:
+
+| Step | Content (items come from the parts below) | Status |
+| --- | --- | --- |
+| V1 | Night City becomes a city: flat street grid (kerbs, sidewalks, zebra crossings, cross streets every 64 m, plazas, wet patches), storefront rows and towers on both sides in 3D, lit shop windows, neon signs with LED lettering; no desert props in the city. Buildings collapse into the ground in a dust cloud; the breath leaves a glowing scorch trail and lights its impact | **Done**, artifact v17 |
+| V2 | Volcano and Desert get the same treatment: lava rivers and falls beside the track, an erupting volcano with a lit plume, ash fall; Desert landmarks that break the 512 m repeat (wrecks, ruins, an oasis), a sandstorm moment (from H and E2) | Next |
+| V3 | Set pieces and new threats (H): pacing patterns per stage, jeeps that drive at you, rolling boulders, artillery on marked spots, supply drops with power-ups | |
+| V4 | Monster abilities and Rodan (G) | |
+| V5 | Bosses (I): gunship phase 2, Mecha-Kaiju in Night City | |
+| V6 | Menus and moments (F): game over v2 with a score breakdown, the unlock reveal, pause menu and settings, Bootcamp | |
+| V7 | Meta and modes (J), roster 4–5 and balance (K), new worlds (L), the rest of E2 | |
+
 | Part | Content | Status |
 | --- | --- | --- |
 | A | Foundations: bug fixes, leaderboard data safety, seeded runs, fast-sim bot matrix, hitbox and data gates, perf instrumentation | **Done** 2026-11-06, artifact v12 |

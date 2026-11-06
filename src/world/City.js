@@ -5,7 +5,21 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { mergeLoose, setVertexColor } from '../gfx/geometry.js';
 
 const part = (g, color, x = 0, y = 0, z = 0) => setVertexColor(g.translate(x, y, z), color);
-const SKYLINE_MAX = 48;
+const SKYLINE_MAX = 220;
+const SIGN_MAX = 200;
+// Cross streets: one every BLOCK metres, STREET wide, in the world frame (x + scroll). Terrain paints them
+// in the same place (its period, 512, is a multiple of BLOCK) and no building is ever put in one.
+const BLOCK = 64, STREET = 10;
+// Rows of buildings along the road. The skyline row stands behind the track and shows in both views; the
+// others exist only in 3D and rise with the view blend, so in 2D nothing stands between camera and track.
+const ROWS = [
+  { side: -1, skyline: true },
+  { side: -1, shops: true },
+  { side: 1, shops: true },
+  { side: 1, towers: true },
+];
+const NEON = [0xff3d7f, 0x31e8ff, 0xffb22e, 0x7dff5a, 0xb05bff, 0xff5a2e];
+const TONES = [0x9aa3ad, 0xc2b8a8, 0x7d8894, 0xb0a490, 0x8c96a0, 0xd0c8bb];
 const ROAD_HALF = 3.2; // the terrain is flat for |z| < 3.5
 const LAMP_GAP = 14; // street lamps along the far kerb; the road shader paints their light pools
 const LAMP_MAX = 16;
@@ -43,14 +57,70 @@ function facadeMaterial(uniforms) {
         vec2 fF = fract(fUV);
         float fWin = fSide * step(0.2, fF.x) * step(fF.x, 0.8) * step(0.3, fF.y) * step(fF.y, 0.82) * step(1.0, vFLocal.y);
         float fLit = step(0.5, fHash(vec3(fCell, vFSeed)));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.1, 0.13), fWin);
+        #ifdef USE_INSTANCING
+          // street level of the city blocks: shop windows between pillars, lit after dark
+          float fU = abs(vFN.x) > 0.5 ? vFLocal.z : vFLocal.x;
+          float fShop = fSide * step(0.9, vFLocal.y) * step(vFLocal.y, 3.1) * step(0.12, fract(fU / 2.4)) * step(fract(fU / 2.4), 0.88);
+          vec3 fShopCol = mix(vec3(1.0, 0.78, 0.5), vec3(0.6, 0.85, 1.0), step(0.6, fHash(vec3(floor(fU / 2.4), 3.0, vFSeed))));
+          fWin *= step(3.6, vFLocal.y);
+        #else
+          float fShop = 0.0;
+          vec3 fShopCol = vec3(0.0);
+        #endif
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.1, 0.13), max(fWin, fShop));
         diffuseColor.rgb *= 1.0 - 0.45 * step(0.6, vFN.y);`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = mix(roughnessFactor, 0.12, fWin);`)
+        roughnessFactor = mix(roughnessFactor, 0.12, max(fWin, fShop));`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3(1.0, 0.76, 0.45) * fWin * fLit * uNight * 1.8;`);
+        totalEmissiveRadiance += vec3(1.0, 0.76, 0.45) * fWin * fLit * uNight * 1.8;
+        totalEmissiveRadiance += fShopCol * fShop * (0.12 + 2.0 * uNight);`);
   };
   return m;
+}
+
+/** Neon signs: a dark panel with a glowing border and LED-dot letters in the sign's colour (instanceColor).
+ *  Borders and letters are sized in metres from the instance scale, so every sign reads the same. */
+function neonMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { uGlow: { value: 1 } }]),
+    fog: true,
+    vertexShader: /* glsl */ `
+      #include <fog_pars_vertex>
+      varying vec2 vUv; varying vec3 vCol; varying vec2 vSize; varying float vSeed;
+      void main() {
+        vUv = uv;
+        vCol = instanceColor;
+        vec3 sc = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+        vec3 an = abs(normal);
+        vSize = an.x > 0.5 ? sc.zy : (an.y > 0.5 ? sc.xz : sc.xy);
+        vSeed = fract(instanceMatrix[3].z * 0.731 + sc.y * 0.37) * 50.0;
+        vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: /* glsl */ `
+      #include <fog_pars_fragment>
+      uniform float uGlow;
+      varying vec2 vUv; varying vec3 vCol; varying vec2 vSize; varying float vSeed;
+      float nh(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      void main() {
+        vec2 m = vUv * vSize;
+        float edge = min(min(m.x, vSize.x - m.x), min(m.y, vSize.y - m.y));
+        float border = 1.0 - smoothstep(0.05, 0.09, edge);
+        // letters: glyph boxes stacked down a tall sign or along a wide one, each a 3x5 dot pattern
+        vec2 inner = m - 0.17;
+        vec2 isz = max(vSize - 0.34, vec2(0.01));
+        vec2 gsz = vSize.y > vSize.x ? vec2(isz.x, 0.62) : vec2(0.44, isz.y);
+        vec2 gi = floor(inner / gsz);
+        vec2 gl = fract(inner / gsz);
+        vec2 cell = floor(gl / 0.8 * vec2(3.0, 5.0));
+        float inside = step(0.0, inner.x) * step(0.0, inner.y) * step(inner.x, isz.x) * step(inner.y, isz.y);
+        float letters = inside * step(gl.x, 0.8) * step(gl.y, 0.8) * step(0.42, nh(gi * 7.13 + cell * 1.31 + vSeed));
+        float lit = max(border, letters * 0.85);
+        gl_FragColor = vec4(vCol * lit * uGlow + vec3(0.025) * (1.0 - lit), 1.0);
+        #include <fog_fragment>
+      }`,
+  });
 }
 
 export class City {
@@ -178,7 +248,7 @@ export class City {
     g.children[0].geometry = this.carVariants[Math.floor(rand() * this.carVariants.length)];
   }
 
-  // ------------------------------------------------------------------ skyline behind the track
+  // ------------------------------------------------------------------ skyline and street fronts
   _buildSkyline(scene) {
     const g = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     setVertexColor(g, 0xffffff);
@@ -188,26 +258,77 @@ export class City {
     this.sky.frustumCulled = false;
     this.sky.count = 0;
     scene.add(this.sky);
+    // neon: blade signs over the sidewalks (face-on to the 3D camera) and banners high on the skyline
+    // (face-on to the 2D camera); brightness follows the night
+    this.neonMat = neonMaterial();
+    this.neon = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.neonMat, SIGN_MAX);
+    this.neon.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.neon.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(SIGN_MAX * 3), 3);
+    this.neon.frustumCulled = false;
+    this.neon.count = 0;
+    scene.add(this.neon);
     this.towers = [];
+    this.rows = ROWS.map(() => ({ far: -Infinity }));
+    this.scroll = 0;
     this._m = new THREE.Matrix4();
     this._p = new THREE.Vector3();
     this._s = new THREE.Vector3();
     this._q = new THREE.Quaternion();
     this._c = new THREE.Color();
-    this.rand = Math.random;
   }
 
-  _spawnTower(x) {
-    const tones = [0x9aa3ad, 0xc2b8a8, 0x7d8894, 0xb0a490, 0x8c96a0, 0xd0c8bb];
-    const near = Math.random() < 0.45;
-    this.towers.push({
-      x,
-      z: near ? -(24 + Math.random() * 22) : -(52 + Math.random() * 60),
-      w: 5 + Math.random() * 9,
-      d: 5 + Math.random() * 8,
-      h: near ? 9 + Math.random() * 18 : 18 + Math.random() * 45,
-      c: tones[Math.floor(Math.random() * tones.length)],
-    });
+  /** Puts one building in row r with its left edge at x or later; returns where the row continues. */
+  _spawnIn(r, x) {
+    const R = ROWS[r], rnd = Math.random;
+    let w, d, h, z, next;
+    if (R.skyline) {
+      const near = rnd() < 0.45;
+      w = 5 + rnd() * 9; d = 5 + rnd() * 8;
+      h = near ? 9 + rnd() * 18 : 18 + rnd() * 45;
+      z = near ? -(24 + rnd() * 22) : -(52 + rnd() * 60);
+    } else if (R.shops) {
+      w = 6 + rnd() * 6; d = 5 + rnd() * 2; h = 5 + rnd() * 6;
+      z = R.side * ((R.side > 0 ? 15 : 7.7) + d / 2 + rnd() * 0.4);
+    } else {
+      w = 6 + rnd() * 7; d = 6 + rnd() * 6; h = 14 + rnd() * 34;
+      z = R.side * (30 + rnd() * 38);
+    }
+    // stay out of the cross streets
+    let b = (((x + this.scroll) % BLOCK) + BLOCK) % BLOCK;
+    if (b < STREET + 0.5) { x += STREET + 0.5 - b; b = STREET + 0.5; }
+    if (b + w > BLOCK - 0.5) {
+      const room = BLOCK - 0.5 - b;
+      if (room < 4) return x + room + 1 + STREET;
+      w = room;
+    }
+    next = R.skyline ? x + 6 + rnd() * 12 : x + w + (R.shops ? 0.3 + rnd() * 0.7 : 3 + rnd() * 9);
+    const tw = { x: x + w / 2, z, w, d, h, c: TONES[Math.floor(rnd() * TONES.length)], k3d: !R.skyline, signs: [] };
+    const col = () => NEON[Math.floor(rnd() * NEON.length)];
+    const face = z - R.side * (d / 2 + 0.08); // the face toward the road
+    if (R.shops) {
+      // a blade sign sticking out over the sidewalk, sometimes a second one
+      const n = rnd() < 0.35 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        const len = 0.9 + rnd() * 0.6;
+        tw.signs.push({ x: (rnd() - 0.5) * (w - 1.2), y: 3.4 + rnd() * 1.6, z: face - R.side * len / 2, sx: 0.14, sy: 1.2 + rnd() * 1.4, sz: len, c: col() });
+      }
+    } else if (R.towers && rnd() < 0.5) {
+      const len = 1.4 + rnd();
+      tw.signs.push({ x: (rnd() - 0.5) * w * 0.5, y: 7 + rnd() * Math.max(1, h - 12), z: face - R.side * len / 2, sx: 0.2, sy: 3 + rnd() * 3, sz: len, c: col() });
+    } else if (R.skyline && z > -50 && h > 14 && rnd() < 0.4) {
+      // a banner on the face toward the track, high above the action
+      tw.signs.push({ x: (rnd() - 0.5) * w * 0.4, y: 9 + rnd() * Math.max(1, h - 13), z: z + d / 2 + 0.08, sx: 1 + rnd() * 0.6, sy: 3 + rnd() * 2.5, sz: 0.14, c: col() });
+    }
+    this.towers.push(tw);
+    return next;
+  }
+
+  _fill(limit) {
+    for (let r = 0; r < ROWS.length; r++) {
+      const row = this.rows[r];
+      if (row.far === -Infinity) row.far = 220; // a city switching on rolls in from the haze
+      while (row.far < limit && this.towers.length < SKYLINE_MAX) row.far = this._spawnIn(r, row.far);
+    }
   }
 
   // ------------------------------------------------------------------ road
@@ -256,7 +377,9 @@ export class City {
   reset() {
     this.active = false;
     this.towers.length = 0;
+    for (const r of this.rows) r.far = -Infinity;
     this.sky.count = 0;
+    this.neon.count = 0;
     this.roadX0 = Infinity;
     this.roadX1 = -Infinity;
     this.road.visible = false;
@@ -269,10 +392,12 @@ export class City {
     this.roadX0 = -40;
     this.roadX1 = 420;
     this.towers.length = 0;
-    for (let x = -90; x < 320; x += 6 + Math.random() * 12) this._spawnTower(x);
+    for (const r of this.rows) r.far = -90;
+    this._fill(320);
   }
 
-  update(dt, speed, scroll, night) {
+  /** view3d: the camera's 2D-to-3D blend; the 3D-only rows rise with it. */
+  update(dt, speed, scroll, night, view3d = 1) {
     this.uniforms.uNight.value = night;
     this.sign.emissiveIntensity = 0.4 + 2.6 * night;
     this.lampMat.emissiveIntensity = 0.2 + 5 * night;
@@ -302,30 +427,40 @@ export class City {
     }
     this.lampPoles.count = this.lampHeads.count = n;
     this.lampPoles.instanceMatrix.needsUpdate = this.lampHeads.instanceMatrix.needsUpdate = true;
-    // skyline
+    // skyline and street fronts
+    this.scroll = scroll;
     const t = this.towers;
     for (let i = t.length - 1; i >= 0; i--) {
       t[i].x -= speed * dt;
       if (t[i].x + t[i].w < -120) t.splice(i, 1);
     }
-    if (this.active) {
-      let far = -Infinity;
-      for (const tw of t) far = Math.max(far, tw.x);
-      if (far === -Infinity) far = 220; // first towers appear out in the haze and roll in
-      while (far < 320 && t.length < SKYLINE_MAX) {
-        far += 6 + Math.random() * 12;
-        this._spawnTower(far);
-      }
-    }
+    for (const r of this.rows) r.far -= speed * dt;
+    if (this.active) this._fill(320);
+    const vk = Math.max(0.001, view3d);
+    let ns = 0;
     for (let i = 0; i < t.length; i++) {
       const tw = t[i];
-      this._p.set(tw.x, -2, tw.z); // sunk a little so dunes never leave one floating
-      this._s.set(tw.w, tw.h, tw.d);
+      const k = tw.k3d ? vk : 1;
+      this._p.set(tw.x, -0.3, tw.z);
+      this._s.set(tw.w, tw.h * k, tw.d);
       this._m.compose(this._p, this._q, this._s);
       this.sky.setMatrixAt(i, this._m);
       this._c.set(tw.c);
       this.sky.instanceColor.setXYZ(i, this._c.r, this._c.g, this._c.b);
+      for (const sg of tw.signs) {
+        if (ns >= SIGN_MAX) break;
+        this._p.set(tw.x + sg.x, -0.3 + sg.y * k, sg.z);
+        this._s.set(sg.sx, sg.sy * k, sg.sz);
+        this._m.compose(this._p, this._q, this._s);
+        this.neon.setMatrixAt(ns, this._m);
+        this._c.set(sg.c);
+        this.neon.instanceColor.setXYZ(ns, this._c.r, this._c.g, this._c.b);
+        ns++;
+      }
     }
+    this.neon.count = ns;
+    this.neon.instanceMatrix.needsUpdate = this.neon.instanceColor.needsUpdate = true;
+    this.neonMat.uniforms.uGlow.value = 0.3 + 3.4 * night;
     this.sky.count = t.length;
     this.sky.instanceMatrix.needsUpdate = true;
     this.sky.instanceColor.needsUpdate = true;

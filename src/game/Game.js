@@ -220,6 +220,7 @@ export class Game {
     this.charge = CFG.breathStart;
     this.toldReady = false;
     this.breathT = 0;
+    this.breathGlow = 0;
     this.stages.reset();
     if (this.obstacles) {
       this.obstacles.reset(this.seed);
@@ -249,7 +250,10 @@ export class Game {
     if (lv.biome === 'city') this.city.prefill();
     this.volcano.setActive(lv.biome === 'volcano');
     const ash = lv.biome === 'volcano' ? 1 : 0;
-    if (instant) this.terrain.uniforms.uAsh.value = this.terrain.uniforms.uLava.value = ash;
+    if (instant) {
+      this.terrain.uniforms.uAsh.value = this.terrain.uniforms.uLava.value = ash;
+      this.terrain.uniforms.uCity.value = lv.biome === 'city' ? 1 : 0;
+    }
     this.obstacles.stage = this.stages.current.key;
     this.obstacles.levelTight = lv.tight;
     this.dayT = lv.time ?? lv.startT;
@@ -1284,9 +1288,10 @@ export class Game {
     }
   }
 
-  _blast(x, y, size = 1) {
-    this.blasts.burst(x, y, size, y < 2.5);
+  _blast(x, y, size = 1, scroll = 0.6) {
+    this.blasts.burst(x, y, size, y < 2.5, scroll);
     this.blastLight.position.set(x, y + 1.4, 1.2);
+    this.blastLight.color.setHex(0xff8a3a);
     this.blastPeak = Math.max(this.blastLightT > 0 ? this.blastPeak : 0, 70 * Math.min(1.8, size));
     this.blastLightT = 0.4;
     for (let i = 0; i < 46 * size; i++) {
@@ -1312,9 +1317,23 @@ export class Game {
 
   _explode(o, points = CFG.killPoints) {
     this.crystals.release(o.uid);
-    this._blast(o.x, o.y + 0.8, o.type === 'tank' || o.type === 'fuel' ? 1.4 : 1);
+    // structures stay standing while they collapse: the fireball bursts on the face toward the monster
+    const front = o.type === 'building' || o.type === 'tower' ? o.width * 0.5 : 0;
+    this._blast(o.x - front, o.y + 0.8 + front * 0.3, o.type === 'tank' || o.type === 'fuel' ? 1.4 : 1, front ? 1 : 0.6);
     if (o.type === 'building') this.audio.glass();
     this._debris(o);
+    // structures collapse into the ground (Obstacles wrecks): a cloud of dust rolls out from the base
+    if (o.type === 'building' || o.type === 'tower') {
+      const w = o.width * 0.5 + 0.5;
+      for (let i = 0; i < 30; i++) {
+        const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 4;
+        this.dust.emit(
+          o.x + Math.cos(a) * w, 0.3 + Math.random() * 1.6, Math.sin(a) * w * 0.6,
+          Math.cos(a) * v, 0.6 + Math.random() * 1.6, Math.sin(a) * v * 0.6,
+          1.3 + Math.random() * 1.0, 1.4, 4.6, 0.78, 0.72, 0.64, 0.7, 1.6, -0.25, 1
+        );
+      }
+    }
     const pts = this._pts(points);
     this.score += pts;
     this._popup(`+${pts}`, o.x, o.y + 2.2, 'kill');
@@ -1618,6 +1637,7 @@ export class Game {
 
     // atomic breath
     let breathAmt = 0;
+    this.breathGlow = 0;
     if (this.breathT > 0) {
       this.breathT -= dt;
       const el = CFG.breathTime - this.breathT;
@@ -1657,6 +1677,35 @@ export class Game {
           8 + Math.random() * 10, (Math.random() - 0.3) * 3, (Math.random() - 0.5) * 3,
           0.25 + Math.random() * 0.3, 0.3, 0.05, ...this.skin.spark, 0.9, 1, 2, 0
         );
+      }
+      // where the beam ends: a splash of sparks, and on the ground dust and a glowing scorch trail
+      if (breathAmt > 0.3 && len > 6) {
+        const tx = mouth.x + len * Math.cos(aim), ty = mouth.y + len * Math.sin(aim);
+        const ground = ty < 1.0;
+        const sy = ground ? 0.1 : ty;
+        for (let i = 0; i < 3; i++) {
+          this.sparks.emit(
+            tx, sy, mouth.z + (Math.random() - 0.5) * 0.8,
+            -3 + Math.random() * 8, 2 + Math.random() * 6, (Math.random() - 0.5) * 5,
+            0.3 + Math.random() * 0.3, 0.32, 0.05, ...this.skin.spark, 0.9, 1.2, 9, 1
+          );
+        }
+        if (ground) {
+          if (Math.random() < 0.5) {
+            this.dust.emit(tx, 0.3, (Math.random() - 0.5) * 1.2, -2 + Math.random() * 3, 1 + Math.random() * 2, (Math.random() - 0.5) * 2,
+              0.7 + Math.random() * 0.5, 0.6, 2.2, 0.5, 0.46, 0.42, 0.5, 2, 0.3, 1);
+          }
+          this.scorchT = (this.scorchT || 0) - dt;
+          if (this.scorchT <= 0) {
+            this.scorchT = 0.06;
+            this.blasts.mark(tx, mouth.z + (Math.random() - 0.5) * 0.3, 1.3 + Math.random() * 0.5, this.dragon.glowColor);
+          }
+        }
+        this.breathGlow = breathAmt;
+        if (this.blastLightT <= 0) {
+          this.blastLight.position.set(tx - 1, sy + 1.2, mouth.z + 1.2);
+          this.blastLight.color.copy(this.dragon.glowColor);
+        }
       }
       if (this.breathT <= 0) {
         this.beam.set(mouth, 0, 0, 0, this.time);
@@ -1781,13 +1830,16 @@ export class Game {
     this.terrain.update(this.scroll, near);
     this.scenery.update(this.scroll, near);
     const groundSpeed = this.speed * (this.state === 'over' ? 0 : 1);
-    this.city.update(dt, groundSpeed, this.scroll, night);
+    this.city.update(dt, groundSpeed, this.scroll, night, this.rig.blend);
     this.volcano.update(dt, groundSpeed, this.time);
     // the volcano's ash and lava veins ease in and out with the level
     const ashT = this.level.biome === 'volcano' ? 1 : 0;
     const tu = this.terrain.uniforms;
     tu.uAsh.value += (ashT - tu.uAsh.value) * (1 - Math.exp(-realDt * 2.5));
     tu.uLava.value = tu.uAsh.value;
+    // Night City's flat street grid eases in and out the same way
+    tu.uCity.value += ((this.level.biome === 'city' ? 1 : 0) - tu.uCity.value) * (1 - Math.exp(-realDt * 2.5));
+    tu.uNight.value = night;
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
     this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);
@@ -1796,7 +1848,8 @@ export class Game {
       this.blastLight.position.x -= this.speed * dt;
       const k = Math.max(0, this.blastLightT / 0.4);
       this.blastLight.intensity = this.blastPeak * k * k;
-    } else if (this.blastLight.intensity) this.blastLight.intensity = 0;
+    } else if (this.breathGlow > 0) this.blastLight.intensity = 26 * this.breathGlow; // the breath lights its impact
+    else if (this.blastLight.intensity) this.blastLight.intensity = 0;
     this.env.scrollClouds(this.scroll);
     // the Desert has a day/night cycle; the City and the Volcano keep their own fixed hour
     if (running && this.level.time == null) this.dayT += (this.speed * dt * CFG.scoreRate) / CFG.dayLength;
