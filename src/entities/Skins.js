@@ -73,14 +73,15 @@ export const SKINS = [
 // The Rex's looks. model: 'smooth' (the sculpted model) or 'pixel' (the same model built from cubes); both use
 // the same skeleton, so they play identically. swatch: the hide colour on the skin button.
 export const REX_SKINS = [
+  // Pixel first: the default look
   {
-    id: 'rex', name: 'Classic', note: 'Olive hide, tiger stripes, fire breath', model: 'smooth', swatch: 0x55652c,
-    skin: [1, 1, 1], plate: [1, 1, 1], glow: 0xffa030, eye: 0xffc02a, crack: 0x000000, metal: 0, rough: 0.95,
-    beam: [[1.7, 0.55, 0.08], [3.3, 2.1, 0.7]], spark: [3.0, 1.4, 0.3], hitX: 1,
-  },
-  {
-    id: 'rex-pixel', name: 'Pixel', note: 'Built from cubes, arcade-green breath', model: 'pixel', swatch: 0x6f8f34,
+    id: 'rex-pixel', name: 'Pixel', note: 'Built from cubes, cube teeth', model: 'pixel', swatch: 0x6f8f34,
     skin: [1.1, 1.18, 1.0], plate: [1, 1, 1], glow: 0x7dff5a, eye: 0xffe040, crack: 0x000000, metal: 0, rough: 0.8,
     beam: [[0.35, 1.6, 0.3], [1.6, 3.3, 1.3]], spark: [1.0, 3.0, 0.6], hitX: 1,
+  },
+  {
+    id: 'rex', name: 'Classic', note: 'Olive hide, tiger stripes, sculpted fangs', model: 'smooth', swatch: 0x55652c,
+    skin: [1, 1, 1], plate: [1, 1, 1], glow: 0xffa030, eye: 0xffc02a, crack: 0x000000, metal: 0, rough: 0.95,
+    beam: [[1.7, 0.55, 0.08], [3.3, 2.1, 0.7]], spark: [3.0, 1.4, 0.3], hitX: 1,
   },
 ];

@@ -4,6 +4,7 @@ import { sweep, blob, mergeLoose, setVertexColor } from '../gfx/geometry.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mulberry32, createNoise, hash32 } from '../gfx/noise.js';
 import { Military } from './Military.js';
+import { bakeAOLater as bakeAO } from '../gfx/ao.js';
 import { Director, GAP, BREATHER_GAP } from '../game/Patterns.js';
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
@@ -364,6 +365,8 @@ export class Obstacles {
       const w = 1.3 + r() * 0.5, h = 0.85 + r() * 0.3;
       this.rockVariants.push({ geometry: buildRock(50 + i, w, h, 1.1 + r() * 0.4), w, h });
     }
+    // baked shading where cacti and rocks meet the sand (and under the cactus arms)
+    for (const v of [...this.cactusVariants.cactusS, ...this.cactusVariants.cactusL, ...this.rockVariants]) bakeAO(v.geometry);
     // helicopters (and the missiles sharing their paint) get a subtler version of the same rim
     rimmed(this.mil.mats.paint, new THREE.Color(0.75, 0.85, 1.0));
     this.lastType = null;
@@ -512,6 +515,7 @@ export class Obstacles {
     if (!o.parts) {
       if (!this.jeepGeo) {
         this.jeepGeo = buildJeep();
+        bakeAO(this.jeepGeo.body);
         this.jeepMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.2 });
         this.jeepLightMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(3, 3, 3) });
       }

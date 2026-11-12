@@ -26,6 +26,9 @@ import { CRESCENDO } from './Patterns.js';
 import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
+import { Teeth } from '../world/Teeth.js';
+import { ContactShadows } from '../world/ContactShadows.js';
+import { runAOQueue } from '../gfx/ao.js';
 import * as TX from '../gfx/textures.js';
 import { TexCache } from '../gfx/TexCache.js';
 import { mulberry32, hash32 } from '../gfx/noise.js';
@@ -83,6 +86,8 @@ export const CFG = {
   bossEvery: 14000, // after the first gunship, the next comes once you've scored this many more points (was 7000: too often)
 };
 
+// Auto starts at Medium on every device (and never climbs above where it started); it can still step down.
+const AUTO_START = 'medium';
 const qualityLabel = (name) => ({ verylow: 'VERY LOW', veryhigh: 'VERY HIGH' })[name] || name.toUpperCase();
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const smooth = (a, b, x) => {
@@ -110,7 +115,7 @@ export class Game {
     // a goal reached in a run that ended without a death (tab closed) unlocks now, before the saved pick is restored
     this.lateUnlocks = this.progress.check(MONSTERS);
     if (this.lateUnlocks.length) this.progress.save();
-    const savedMonster = MONSTERS.find((m) => m.id === store.get('dragon.monster', 'kaiju'));
+    const savedMonster = MONSTERS.find((m) => m.id === store.get('dragon.monster', 'rex')); // new players start as the Pixel Rex
     this.monster = savedMonster && this.progress.isUnlocked(savedMonster) ? savedMonster : MONSTERS[0];
     this.preview = false; // the owner trying a locked monster
     this.skinIndex = Math.min(SKINS.length - 1, Math.max(0, SKINS.findIndex((k) => k.id === store.get('dragon.skin', 'classic'))));
@@ -316,6 +321,7 @@ export class Game {
     this.dragon.setSkin(this.skin);
     this.beam.setColors(this.skin.beam);
     for (const b of this.sideBeams) b.setColors(this.skin.beam);
+    this.teeth?.setStyle(this.skin.model);
     // the breath's own colour (its sheath, normalised): scorch marks and the impact light use it
     const [r, g, b] = this.skin.beam[0], m = Math.max(r, g, b);
     (this.breathColor ||= new THREE.Color()).setRGB(r / m, g / m, b / m);
@@ -430,8 +436,7 @@ export class Game {
     this.tex = tex;
 
     await step(0.48, 'Shaping dunes…');
-    const coarse = matchMedia('(pointer: coarse)').matches;
-    const qName = this.settings.quality === 'auto' ? (coarse ? 'medium' : 'high') : this.settings.quality;
+    const qName = this.settings.quality === 'auto' ? AUTO_START : this.settings.quality;
     this.terrain = new Terrain(tex.sand, QUALITY[qName].terrain);
     scene.add(this.terrain.mesh);
 
@@ -486,6 +491,8 @@ export class Game {
     this.sideBeams = [new BreathBeam(), new BreathBeam()];
     for (const b of this.sideBeams) scene.add(b.mesh);
     scene.add(this.beam.mesh, this.beam.light);
+    this.teeth = new Teeth(scene); // the Rex's Tooth Quake
+    this.contact = new ContactShadows(scene, tex.dot);
     this.footprints = new Footprints(tex.footprint);
     scene.add(this.footprints.mesh);
 
@@ -764,6 +771,7 @@ export class Game {
     this.dust.clear();
     this.sparks.clear();
     this.footprints.clear();
+    this.teeth.clear();
     this._resetRun();
     this.pace = CFG.startSpeed * this.level.pace;
     this.y = 0;
@@ -886,8 +894,7 @@ export class Game {
   _setQuality(mode, announce) {
     this.settings.quality = mode;
     store.set('dragon.quality', mode);
-    const coarse = matchMedia('(pointer: coarse)').matches;
-    const name = mode === 'auto' ? (coarse ? 'medium' : 'high') : mode;
+    const name = mode === 'auto' ? AUTO_START : mode;
     this.renderer.scale = mode === 'auto' ? this.renderer.scale : 1;
     this.renderer.setQuality(name);
     this._applyQualityContent(name);
@@ -994,6 +1001,20 @@ export class Game {
     this.hud.setRival(b, rv, !rv);
   }
 
+  /** Soft contact patches under the monster (smaller as it leaves the ground) and what stands on the track. */
+  _contactShadows() {
+    const cs = this.contact;
+    cs.begin();
+    cs.add(-0.1, 0, 2.8 * this.skin.hitX, 1.7, 1 - Math.min(1, Math.max(0, this.y) / 3.5));
+    for (const o of this.obstacles.active) {
+      if (o.dead || o.y > 0.3 || !o.group || o.type === 'lava' || o.type === 'meteor') continue;
+      const p = o.group.position;
+      if (p.x < -20 || p.x > 120) continue;
+      cs.add(p.x, p.z, o.width * 1.3, Math.min(3, Math.max(1.1, o.width * 0.8)));
+    }
+    cs.end();
+  }
+
   // ------------------------------------------------------------------ gameplay helpers
   _breath() {
     if (this.state !== 'running' || this.breathT > 0) return;
@@ -1002,7 +1023,7 @@ export class Game {
       // tell the player why nothing happened instead of silently ignoring the key
       this.audio.denied();
       this.hud.chargeDenied();
-      this.hud.toast(`Atomic breath charging · ${Math.floor(this.charge * 100)}%`, 1100);
+      this.hud.toast(`${this.monster.attack === 'teeth' ? 'Tooth quake' : 'Atomic breath'} charging · ${Math.floor(this.charge * 100)}%`, 1100);
       return;
     }
     this.charge = 0;
@@ -1013,6 +1034,12 @@ export class Game {
     this.rig.shake(0.5);
     this.flash = 0.1;
     this.flashColor.setRGB(0.25, 0.6, 1.0);
+    if (this.monster.attack === 'teeth') {
+      // where the next row of teeth comes up: just ahead of the jaws (ground x, scrolls with the world)
+      this.toothX = this.dragon.getMouthWorld(this._mouth).x + 1.4;
+      this.flashColor.setRGB(0.9, 0.75, 0.5);
+      this.rig.shake(0.8);
+    }
   }
 
   _smash() {
@@ -1792,10 +1819,27 @@ export class Game {
       breathAmt = smooth(0, 0.12, el) * smooth(0, 0.25, this.breathT);
       const mouth = this.dragon.getMouthWorld(this._mouth);
       const len = Math.min(CFG.breathRange, el * 75);
+      // the Rex: teeth erupt from the ground up to where the beam would reach (the hits below are the beam's)
+      const teeth = this.monster.attack === 'teeth';
+      if (teeth) {
+        this.toothX -= this.speed * dt;
+        const front = mouth.x + len;
+        while (this.toothX < front && breathAmt > 0.05) {
+          const x = this.toothX, d = Math.max(0, x - mouth.x);
+          const h = 1.3 + Math.min(1.8, d * 0.07) + Math.random() * 0.9;
+          this.teeth.erupt(x, (Math.random() - 0.5) * 0.7, h, { hold: 0.5 + Math.random() * 0.25, lean: 0.15 });
+          for (const side of [-1, 1]) {
+            if (Math.random() < 0.75) this.teeth.erupt(x + Math.random() * 0.6, side * (1.0 + Math.random() * 1.4), h * (0.5 + Math.random() * 0.3), { hold: 0.45 + Math.random() * 0.2, lean: 0.1 });
+          }
+          this.dust.emit(x, 0.3, (Math.random() - 0.5) * 1.2, -2 + Math.random() * 3, 1.5 + Math.random() * 2.5, (Math.random() - 0.5) * 2,
+            0.6 + Math.random() * 0.4, 0.6, 2.4, 0.5, 0.46, 0.42, 0.5, 2, 0.3, 1);
+          this.toothX += 1.25;
+        }
+      }
       // against the gunship the beam tilts up to meet it
       const boss = this.boss;
       const aim = boss.active ? Math.min(0.4, Math.max(-0.06, Math.atan2(boss.y - mouth.y, boss.x - mouth.x))) : -0.06;
-      this.beam.set(mouth, len, 0.55 + 0.15 * Math.sin(this.time * 40), breathAmt, this.time, aim);
+      this.beam.set(mouth, teeth ? 0 : len, 0.55 + 0.15 * Math.sin(this.time * 40), teeth ? 0 : breathAmt, this.time, aim);
       const nSide = this.dragon.getSideMouths(this._sideMouths);
       this.sideBeams.forEach((b, i) => b.set(this._sideMouths[i], i < nSide ? len * 0.85 : 0, 0.4 + 0.1 * Math.sin(this.time * 33 + i),
         i < nSide ? breathAmt : 0, this.time, aim + (i ? 0.05 : -0.05)));
@@ -1803,6 +1847,11 @@ export class Game {
       for (const o of this.obstacles.active) {
         if (!o.dead && o.x - o.width / 2 < mouth.x + len && o.x > mouth.x - 2) {
           o.dead = true;
+          if (teeth) {
+            // a big tooth skewers it: up to a flyer, through a building
+            const top = o.y > 0.5 ? o.y + 0.9 : o.type === 'building' || o.type === 'tower' ? 5.5 : 3.2;
+            this.teeth.erupt(o.x, o.group?.position.z ?? 0, top, { hold: 0.75 });
+          }
           this._explode(o);
           burned++;
         }
@@ -1816,9 +1865,12 @@ export class Game {
       }
       if (boss.state === 'fight' && !this.bossHitThisBreath && breathAmt > 0.5) {
         const b = boss.box(this._bossBox);
-        if (Math.hypot(b[0] - mouth.x, boss.y - mouth.y) < len) this._bossHit('breath');
+        if (Math.hypot(b[0] - mouth.x, boss.y - mouth.y) < len) {
+          this._bossHit('breath');
+          if (teeth) this.teeth.erupt(b[0], 0, boss.y + 0.6, { hold: 0.9 });
+        }
       }
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < (teeth ? 0 : 4); i++) {
         const d = Math.random() * len;
         this.sparks.emit(
           mouth.x + d * Math.cos(aim), mouth.y + d * Math.sin(aim) + (Math.random() - 0.5) * 0.6, mouth.z + (Math.random() - 0.5) * 0.6,
@@ -1827,7 +1879,7 @@ export class Game {
         );
       }
       // where the beam ends: a splash of sparks, and on the ground dust and a glowing scorch trail
-      if (breathAmt > 0.3 && len > 6) {
+      if (breathAmt > 0.3 && len > 6 && !teeth) {
         const tx = mouth.x + len * Math.cos(aim), ty = mouth.y + len * Math.sin(aim);
         const ground = ty < 1.0;
         const sy = ground ? 0.1 : ty;
@@ -2029,6 +2081,9 @@ export class Game {
     this.dust.update(dt, ground);
     this.sparks.update(dt, ground);
     this.footprints.update(dt, this.speed);
+    this.teeth.update(dt, this.state === 'over' ? 0 : this.speed);
+    if (this.state !== 'loading') runAOQueue(this.state === 'running' ? 2 : 6); // baked shading, a slice per frame
+    this._contactShadows();
     const pxScale = this.renderer.pixelHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
     this.dust.uniforms.uScale.value = pxScale;
     this.sparks.uniforms.uScale.value = pxScale;

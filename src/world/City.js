@@ -1,6 +1,7 @@
 // City biome: a skyline that rolls in behind the track, a road under the dragon, and the buildings and
 // cars that line it (smashable obstacles, built here and spawned by Obstacles).
 import * as THREE from 'three';
+import { bakeAOLater as bakeAO } from '../gfx/ao.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeLoose, setVertexColor } from '../gfx/geometry.js';
 
@@ -133,6 +134,9 @@ export class City {
     this.lightsMat = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(3, 3, 3), toneMapped: true });
     this._buildBuildings();
     this._buildCars();
+    // baked shading: building bases and ledges, cars where the body meets the wheels and the road
+    for (const v of this.buildingVariants) bakeAO(v.geometry, { reach: 1.6 });
+    for (const g of this.carVariants) bakeAO(g);
     this._buildSkyline(scene);
     this._buildRoad(scene);
     this._buildLamps(scene);

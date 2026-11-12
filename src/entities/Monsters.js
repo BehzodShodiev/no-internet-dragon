@@ -1,7 +1,9 @@
 // The monster roster. Everyone starts with the Kaiju (the atomic lizard, with its colour skins); the others
 // are locked until their goal is met (lifetime stats, see game/Progress.js). Ids are stored in players'
 // progress and leaderboard rows, so they never change; names are what players see. skins: a list of looks
-// to choose from (Skins.js); monsters without one use `look`.
+// to choose from (Skins.js); monsters without one use `look`. The Kaiju and the Rex are unlocked from the
+// start; new players begin with the Rex (Game: 'dragon.monster' defaults to 'rex').
+// attack: 'teeth' replaces the breath beam's look with teeth erupting from the ground (same hits).
 // look: the same fields as a skin in Skins.js (colours, breath, build). hitX: hitbox width along x, which
 // also scales score, as for skins; score (optional) overrides that factor for monsters with a gameplay
 // edge. model: 'dragon' (default, Dragon.js with `variant`) or 'moth' (Moth.js). glide: holding jump on
@@ -37,8 +39,8 @@ export const MONSTERS = [
     },
   },
   {
-    id: 'rex', name: 'Rex', variant: 'rex', skins: REX_SKINS, voice: 1.2, sound: { roar: 'growl', breath: 'atomic' },
-    note: 'A tyrant lizard: huge head, tiny arms, no plates. Two looks: sculpted, or built from cubes.',
-    goal: { stat: 'smashes', need: 100, text: 'Smash 100 things in total' },
+    id: 'rex', name: 'Rex', variant: 'rex', skins: REX_SKINS, voice: 1.2, sound: { roar: 'growl', breath: 'quake' },
+    note: 'A tyrant lizard: huge head, tiny arms, no plates. Two looks: built from cubes, or sculpted. Its attack is a quake of giant teeth.',
+    attack: 'teeth', attackName: 'TOOTH QUAKE',
   },
 ];

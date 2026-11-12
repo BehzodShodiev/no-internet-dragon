@@ -17,7 +17,8 @@ const THEMES = {
 };
 const LAYERS = ['pad', 'bass', 'perc', 'arp', 'brass', 'lead'];
 // intensity at which each layer is fully in (it fades in over the unit below)
-const LAYER_AT = { pad: 0, bass: 1, perc: 1, arp: 2, brass: 3, lead: 2 };
+// (the lead melody plays from the start of a run; arpeggios join in the army stages, brass for bosses)
+const LAYER_AT = { pad: 0, bass: 1, perc: 1, arp: 2, brass: 3, lead: 1 };
 
 export class Music {
   constructor(audio, bus) {

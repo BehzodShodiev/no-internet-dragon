@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { sweep, mergeLoose, setVertexColor } from '../gfx/geometry.js';
+import { bakeAOLater as bakeAO } from '../gfx/ao.js';
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
 const part = (g, color, x = 0, y = 0, z = 0) => {
@@ -34,6 +35,9 @@ export class Military {
     this._buildHeli();
     this._buildProjectiles();
     this._buildStructures();
+    // baked shading: corners and the base where things stand on the ground (flyers: their own corners only)
+    for (const [g, ground] of [[this.towerGeo, true], [this.fuelGeo, true], [this.hedgehogGeo, true], [this.tankHull, true],
+      [this.tankBarrel, false], [this.heliBody, false], [this.missileGeo, false]]) bakeAO(g, { ground });
   }
 
   // ------------------------------------------------------------------ outpost structures

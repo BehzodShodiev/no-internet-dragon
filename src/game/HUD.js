@@ -372,6 +372,7 @@ export class HUD {
   /** Shows the current monster's name, and its skin swatches if it has skins. */
   setMonster(m, preview) {
     for (const id of ['monster-name', 'monster-name-over']) $(id).textContent = m.name + (preview ? ' (preview)' : '');
+    $('charge').querySelector('.label').firstChild.textContent = `${m.attackName || 'ATOMIC BREATH'} `;
     for (const id of ['skins', 'over-skins']) $(id).hidden = !m.skins;
     if (!m.skins) $('skin-info').textContent = m.note;
   }

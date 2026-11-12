@@ -3,6 +3,8 @@
 // reverb send whose impulse is generated per biome. Every SFX method plays into this.master (the SFX bus).
 import { Music } from './Music.js';
 
+// overall output level (lowered from 0.9 in v26, when the melody started playing during normal runs)
+const OUT_LEVEL = 0.78;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 export class AudioEngine {
@@ -24,7 +26,7 @@ export class AudioEngine {
     const ctx = (this.ctx = new AC());
     // final mix: buses -> glue compressor -> brick-wall limiter -> speakers (mute and volume on this.out)
     this.out = ctx.createGain();
-    this.out.gain.value = this.muted ? 0 : 0.9;
+    this.out.gain.value = this.muted ? 0 : OUT_LEVEL;
     const glue = ctx.createDynamicsCompressor();
     glue.threshold.value = -16;
     glue.ratio.value = 3;
@@ -48,7 +50,7 @@ export class AudioEngine {
     this.out.connect(glue).connect(limiter).connect(clip).connect(ctx.destination);
     const bus = (v) => { const g = ctx.createGain(); g.gain.value = v; g.connect(this.out); return g; };
     this.master = bus(0.8); // sound effects
-    this.musicLevel = 0.42;
+    this.musicLevel = 0.36;
     this.musicBus = bus(this.musicLevel);
     this.uiBus = bus(0.5);
     this.amb = bus(0.9);
@@ -198,7 +200,7 @@ export class AudioEngine {
   setMuted(m) {
     this.muted = m;
     try { localStorage.setItem('dragon.muted', m ? '1' : '0'); } catch { /* ignore */ }
-    if (this.out) this.out.gain.setTargetAtTime(m ? 0 : 0.9, this.ctx.currentTime, 0.05);
+    if (this.out) this.out.gain.setTargetAtTime(m ? 0 : OUT_LEVEL, this.ctx.currentTime, 0.05);
   }
 
   _noiseSrc(persistent = false) {
@@ -403,12 +405,46 @@ export class AudioEngine {
     n.stop(t + duration + 0.05);
   }
 
+  /** The Rex's Tooth Quake: a deep ground rumble under a run of bony cracks as the teeth punch up. */
+  _quake(duration) {
+    const ctx = this.ctx, t = ctx.currentTime;
+    const n = this._noiseSrc();
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 140;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.06);
+    g.gain.setValueAtTime(0.8, t + duration * 0.75);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + duration + 0.3);
+    n.connect(lp).connect(g).connect(this.master);
+    n.start(t, Math.random());
+    n.stop(t + duration + 0.35);
+    // cracks: short, bright bursts, a little irregular
+    for (let at = 0.03; at < duration; at += 0.06 + Math.random() * 0.05) {
+      const c = this._noiseSrc();
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 900 + Math.random() * 1800;
+      bp.Q.value = 1.4;
+      const cg = ctx.createGain();
+      const s = t + at;
+      cg.gain.setValueAtTime(0.0001, s);
+      cg.gain.exponentialRampToValueAtTime(0.32 + Math.random() * 0.2, s + 0.004);
+      cg.gain.exponentialRampToValueAtTime(0.0001, s + 0.07);
+      c.connect(bp).connect(cg).connect(this.master);
+      c.start(s, Math.random());
+      c.stop(s + 0.08);
+    }
+  }
+
   /** kind: 'atomic' (the Kaiju's roaring beam), 'gravity' (the Hydra's crackling, pulsing beams), 'dust' (the Moth Queen's shimmering scale storm). */
   breath(duration = 1.2, kind = 'atomic') {
     if (!this.ctx) return;
     this.duck(0.45, duration);
     if (kind === 'gravity') return this._gravityBeam(duration);
     if (kind === 'dust') return this._dustBeam(duration);
+    if (kind === 'quake') return this._quake(duration);
     const ctx = this.ctx, t = ctx.currentTime;
     const n = this._noiseSrc();
     const f = ctx.createBiquadFilter();
