@@ -117,7 +117,7 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 
 ## Performance
 
-- Quality presets are Very Low (75% resolution, no shadows, bloom or smoothing, for weak laptops and old phones), Low, Medium and High. **Auto** (the default) starts at High on desktop and Medium on touch devices and adjusts render resolution first. It only steps down when the GPU is what is slow (it times the GPU where the browser allows), so a 30 fps cap, a 50 Hz display or a busy CPU leave quality alone; a preset change waits for the end of the run, and with steady headroom it climbs back up.
+- Quality presets are Very Low (75% resolution, no shadows, bloom or smoothing, for weak laptops and old phones), Low, Medium, High and Very High. **Very High** (manual only: Auto never picks it) renders 1.5× supersampled (up to 3×, the drawing buffer capped at 9 MP but never below High), with 4096 shadows reaching twice as far ahead in 3D, a 640-segment terrain, 16× texture filtering and the detailed Kaiju model (`Dragon` with `detail = 'hd'`: muscled body, hands, carved head with lidded slit-pupil eyes, curved teeth and claws, ridged bone plates; same skeleton, so identical hitboxes). The model swaps only between runs. **Auto** (the default) starts at High on desktop and Medium on touch devices and adjusts render resolution first. It only steps down when the GPU is what is slow (it times the GPU where the browser allows), so a 30 fps cap, a 50 Hz display or a busy CPU leave quality alone; a preset change waits for the end of the run, and with steady headroom it climbs back up.
 - Every shader, the post-processing ones included, compiles during loading against the target it really draws into, and the other monsters are built and compiled in the background while the title is idle, so neither a run nor picking a monster stalls.
 - Only the scene is multisampled: bloom and the final pass (tone mapping and grade merged into one draw) work on plain half-float targets. The sky lighting re-bakes into the same targets every time, so it allocates nothing and never invalidates materials.
 - Background props use lighter meshes than the obstacles you run into (the far saguaros alone were 1.3 million triangles per pass). Obstacles, including their meshes, are pooled and restyled; scenery is instanced; particles reuse fixed buffers; the main loop allocates nothing; the HUD only touches the page when a value changes; in-run buttons skip the frosted-glass blur; paused and menu screens redraw less often.
@@ -148,6 +148,7 @@ src/
   game/Music.js           the procedural score: themes, layers by intensity, stingers
   game/HUD.js             DOM overlay: meters, combo, banners, pop-ups, warnings, boards
   entities/Dragon.js      the skinned dragon + IK + hitboxes from bone positions
+  entities/DragonHD.js    Very High model parts: curved teeth and claws, ridged bone plates, noise
   entities/Obstacles.js   cacti, boulders, flyers, tanks, projectiles, spawner, crystal patterns
   entities/Military.js    tank, helicopter, watchtower, fuel tank, hedgehog, shell and missile models
   entities/Boss.js        the gunship boss

@@ -412,7 +412,7 @@ export class Environment {
     const useMoon = elev < -2;
     const dir = useMoon ? this.moonLightDir : this.sunDir;
     // 3D sees far down the track: the shadow box stretches forward with the view (2D keeps it tight and sharp)
-    const reach = 34 + 18 * viewBlend;
+    const reach = 34 + 18 * viewBlend * (this.shadowReach || 1); // Very High reaches twice as far ahead
     const shc = this.light.shadow.camera;
     if (Math.abs(shc.right - reach) > 0.5) {
       shc.left = shc.bottom = -reach;

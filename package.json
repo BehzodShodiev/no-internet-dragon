@@ -11,11 +11,11 @@
     "preview": "vite preview",
     "artifact": "vite build --mode single && node tools/make-artifact.mjs dist-single/index.html dist-single/artifact.html && node tools/scan-artifact.mjs dist-single/artifact.html",
     "test:data": "node tools/datatest.mjs",
-    "test:hitbox": "node tools/hitcheck.mjs",
+    "test:hitbox": "node tools/hitcheck.mjs && node tools/hdparity.mjs",
     "test:matrix": "node tools/botmatrix.mjs",
     "test:quick": "node tools/botmatrix.mjs --quick",
     "test:perf": "node tools/perf.mjs",
-    "test": "node tools/datatest.mjs && node tools/audiocheck.mjs && node tools/hitcheck.mjs && node tools/botmatrix.mjs",
+    "test": "node tools/datatest.mjs && node tools/audiocheck.mjs && node tools/hitcheck.mjs && node tools/hdparity.mjs && node tools/botmatrix.mjs",
     "test:audio": "node tools/audiocheck.mjs",
     "test:load": "vite build --mode single && node tools/loadtime.mjs"
   },

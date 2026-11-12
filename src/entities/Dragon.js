@@ -2,6 +2,8 @@
 // Legs are driven by analytic 2-bone IK so feet plant on the ground while running.
 import * as THREE from 'three';
 import { sweep, mergeGeometries } from '../gfx/geometry.js';
+import { noise3, curvedSpike, spikeColors, plateGeometry, plateColors } from './DragonHD.js';
+import { mulberry32 } from '../gfx/noise.js';
 
 export const DRAGON_SCALE = 0.62;
 const PLATE_BLUE = new THREE.Color(0x3cc8ff);
@@ -47,11 +49,18 @@ const HIP_Z = 0.62;
 const HEAD_TILT = -0.12;
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
+const bump = (x, c, w) => Math.exp(-(((x - c) / w) ** 2));
+const sgnPow = (v, p) => Math.sign(v) * Math.abs(v) ** p;
 
 export class Dragon {
-  /** variant: 'kaiju' (the Godzilla-style dragon) or 'ghidorah' (three heads, two tails, wings). */
-  constructor(tex, variant = 'kaiju') {
+  /**
+   * variant: 'kaiju' (the Godzilla-style dragon) or 'ghidorah' (three heads, two tails, wings).
+   * detail: 'std', or 'hd' for the Very High model (Kaiju only): same skeleton, animation and hitboxes,
+   * with real anatomy, a carved head and bony plates.
+   */
+  constructor(tex, variant = 'kaiju', detail = 'std') {
     this.variant = variant;
+    this.detail = variant === 'kaiju' ? detail : 'std';
     this.group = new THREE.Group();
     this.group.name = 'dragon';
     this.group.scale.setScalar(DRAGON_SCALE);
@@ -73,8 +82,15 @@ export class Dragon {
     this.onFootstep = null;
     this._buildSkeleton();
     this._buildMaterials(tex);
-    this._buildMeshes();
+    if (this.detail === 'hd') this._buildMeshesHD(); else this._buildMeshes();
     this._anchors();
+  }
+
+  /** Frees the GPU resources of this model (when Very High swaps models). */
+  dispose() {
+    this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    for (const m of [this.skinMat, this.plateMat, this.eyeMat, this.ivoryMat, this.darkMat, this.wingMat]) m?.dispose();
+    this.plateMat.emissiveMap?.dispose();
   }
 
   _buildSkeleton() {
@@ -150,9 +166,21 @@ export class Dragon {
       uCrack: { value: new THREE.Color(0, 0, 0) }, uSpot: { value: new THREE.Color(0, 0, 0) },
       uSheen: { value: new THREE.Color(0, 0, 0) }, uIrid: { value: 0 },
     };
+    // Very High: a second, finer layer of the scale normals breaks up the tiling, and a soft cool rim keeps
+    // the silhouette readable on dark backgrounds (only compiled in, via the HD define, for that model)
+    if (this.detail === 'hd') {
+      this.skinMat.defines = { HD: '' };
+      this.skinMat.normalScale.set(1.0, 1.0);
+      this.skinMat.aoMapIntensity = 0.75;
+    }
     this.skinMat.onBeforeCompile = (s) => {
       Object.assign(s.uniforms, this.skinUniforms);
       s.fragmentShader = s.fragmentShader
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+          #ifdef HD
+          vec3 mapN2 = texture2D(normalMap, vNormalMapUv * 3.7 + 0.37).xyz * 2.0 - 1.0;
+          normal = normalize(normal + tbn * vec3(mapN2.xy * 0.45, 0.0));
+          #endif`)
         .replace('#include <common>', '#include <common>\nuniform vec3 uCrack;\nuniform vec3 uSpot;\nuniform vec3 uSheen;\nuniform float uIrid;')
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
           float groove = smoothstep(0.22, 0.06, dot(sampledDiffuseColor.rgb, vec3(0.3, 0.59, 0.11)));
@@ -164,7 +192,11 @@ export class Dragon {
           float fres = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 4.0);
           totalEmissiveRadiance += uSheen * fres * 0.9;
           vec3 irid = 0.5 + 0.5 * cos(6.2832 * (fres * 1.4 + vec3(0.0, 0.33, 0.67)));
-          totalEmissiveRadiance += irid * fres * uIrid * 0.8;`);
+          totalEmissiveRadiance += irid * fres * uIrid * 0.8;
+          #ifdef HD
+          float rim = pow(1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0), 3.0);
+          totalEmissiveRadiance += vec3(0.5, 0.58, 0.68) * rim * 0.16;
+          #endif`);
     };
     const g = new Uint8Array(64 * 4);
     for (let i = 0; i < 64; i++) {
@@ -204,6 +236,13 @@ export class Dragon {
       color: 0xffb347, emissive: 0xff7a00, emissiveIntensity: 1.6, roughness: 0.22, metalness: 0,
     });
     this.ivoryMat = new THREE.MeshStandardMaterial({ color: 0xe9dfc6, roughness: 0.45, metalness: 0 });
+    if (this.detail === 'hd') {
+      // teeth and claws carry their own colours (ivory teeth, dark horn claws); pupils and nostrils are glossy black
+      this.ivoryMat.color.set(0xffffff);
+      this.ivoryMat.vertexColors = true;
+      this.ivoryMat.roughness = 0.38;
+      this.darkMat = new THREE.MeshStandardMaterial({ color: 0x070504, roughness: 0.18, metalness: 0 });
+    }
   }
 
   _buildMeshes() {
@@ -475,6 +514,368 @@ export class Dragon {
       m.frustumCulled = false;
       this.group.add(m);
     }
+  }
+
+  /**
+   * The Very High Kaiju. Same spine, bones and proportions as _buildMeshes (so the same animation and
+   * hitboxes), with anatomy and surface: haunch and shoulder masses, a dorsal keel, banded belly plates
+   * and throat folds; muscled legs with heavy clawed toes; real arms and four-fingered hands; a carved
+   * head with brows, sockets, lidded slit-pupil eyes, nostrils, curved teeth and a tongue; mottled
+   * colouring; thick, ridged bone plates.
+   */
+  _buildMeshesHD() {
+    const tk = this.tk;
+    const L = this.curve.getLength();
+    const backCol = new THREE.Color(0x2c332d);
+    const midCol = new THREE.Color(0x47504a);
+    const bellyCol = new THREE.Color(0x9a8e78);
+    const mouthCol = new THREE.Color(0x4a1414);
+    const gumCol = new THREE.Color(0x7a2a2a);
+    const tongueCol = new THREE.Color(0x8c3a3c);
+    const ivory = new THREE.Color(0xeee3c8), ivoryRoot = new THREE.Color(0xb3a079);
+    const hornRoot = new THREE.Color(0x2a2622), hornTip = new THREE.Color(0x9a8f7c);
+    const rnd = mulberry32(31);
+    const skinGeos = [], keratin = [], dark = [], eyes = [];
+    const rigged = (g, bone) => { skinRigid(g, bone); return g; };
+    const paint = (g, col) => {
+      const n = g.attributes.position.count, a = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { a[i * 3] = col.r; a[i * 3 + 1] = col.g; a[i * 3 + 2] = col.b; }
+      g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+      return g;
+    };
+    // large blotches plus fine speckle, so no two stretches of hide match
+    const mottle = (out, x, y, z, k = 1) => out.multiplyScalar(1 + k * (0.3 * noise3(x * 1.3, y * 1.3, z * 1.3) + 0.1 * noise3(x * 5, y * 5, z * 5)));
+
+    // ---------------- body / tail / neck ----------------
+    const belly = (t, c) => smooth(-0.3, -0.8, c) * smooth(tk[4], tk[5] - 0.02, t) * smooth(tk[9], tk[8], t);
+    const band = (t) => 0.5 + 0.5 * Math.cos((2 * Math.PI * t * L) / 0.21);
+    const throat = (t, c) => smooth(tk[7], tk[8], t) * smooth(-0.15, -0.7, c);
+    skinGeos.push(sweep({
+      points: this.curve.points,
+      segments: 240,
+      radial: 64,
+      uvScale: [12, 5.2],
+      section: (t, a, out) => {
+        const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
+        const c = Math.cos(a), s = Math.sin(a);
+        const flank = Math.max(0, 1 - Math.abs(c) * 1.25);
+        const haunch = bump(t, (tk[5] + tk[6]) / 2, 0.045) * flank * 0.075;
+        const shoulder = bump(t, tk[7], 0.035) * Math.max(0, 1 - Math.abs(c - 0.25) * 1.4) * 0.07;
+        const groove = belly(t, c) * 0.016 * (1 - band(t)) ** 3;
+        const fold = throat(t, c) * 0.02 * Math.max(0, Math.sin((2 * Math.PI * t * L) / 0.13));
+        const keel = Math.max(0, c) ** 30 * 0.045 * (0.5 + 0.5 * smooth(tk[6], tk[2], t));
+        const k = 1 + haunch + shoulder + fold;
+        out.x = s * rz * (1 - 0.12 * Math.max(0, c)) * k;
+        out.y = c * ry * (c < 0 ? 1.04 : 1) * (k - groove) + keel * ry;
+      },
+      color: (t, a, out) => {
+        const c = Math.cos(a), s = Math.sin(a);
+        const bel = belly(t, c);
+        out.copy(backCol).lerp(midCol, smooth(0.95, 0.15, c) * 0.75).lerp(bellyCol, smooth(0.0, -0.75, c) * smooth(0.02, 0.25, t));
+        out.multiplyScalar(1 - 0.45 * Math.max(0, c) ** 4); // dark stripe down the spine
+        out.multiplyScalar(1 - bel * 0.45 * (1 - band(t)) ** 4); // grooves between the belly plates
+        mottle(out, t * L, c * 1.3, s * 1.3, 1 - 0.6 * bel);
+      },
+      skin: (t) => this.spineSkin(t),
+      capStart: true,
+    }));
+
+    // ---------------- legs ----------------
+    const legLen = 0.4 + L1 + L2 + L3;
+    const legKeys = [0, 0.4, 0.95, 1.55, 2.05, 2.65, 3.0, legLen];
+    const legR = [0.54, 0.64, 0.52, 0.28, 0.22, 0.135, 0.105, 0.115];
+    for (const [thigh, z] of [[B.thighR, HIP_Z], [B.thighL, -HIP_Z]]) {
+      const top = V(HIP_OFF.x, SPINE[5][1] + HIP_OFF.y + 0.4, z);
+      skinGeos.push(sweep({
+        points: [0, 0.33, 0.66, 1].map((f) => top.clone().add(V(0, -legLen * f))),
+        segments: 72,
+        radial: 32,
+        uvScale: [3.4, 2.4],
+        curveType: 'catmullrom',
+        section: (t, a, out) => {
+          const d = t * legLen;
+          const r = profile(legKeys, legR, d);
+          const c = Math.cos(a), s = Math.sin(a);
+          const thighness = smooth(1.6, 0.8, d);
+          const calf = bump(d, 1.95, 0.28) * 0.07 * Math.max(0, -c);
+          const quad = bump(d, 0.85, 0.35) * 0.06 * Math.max(0, c); // the front of the thigh
+          const knee = bump(d, 1.52, 0.12) * 0.05 * Math.max(0, c);
+          const ankle = bump(d, 2.62, 0.1) * 0.025;
+          out.x = s * (r + ankle) * (0.95 - 0.1 * thighness);
+          out.y = c * (r * (1.0 + 0.18 * thighness) + ankle) - calf + quad + knee;
+        },
+        color: (t, a, out) => {
+          const c = Math.cos(a), s = Math.sin(a);
+          out.copy(midCol).lerp(backCol, smooth(0.45, 0.9, t) * 0.55).lerp(bellyCol, smooth(0.2, -0.9, s * Math.sign(z)) * 0.3);
+          mottle(out, t * legLen, c, s + z);
+        },
+        skin: (t) => {
+          const d = t * legLen;
+          if (d < 0.45) { const f = smooth(0.05, 0.45, d); return [B.hips, thigh, 1 - f, f]; }
+          if (d < 1.42) return [thigh, 0, 1, 0];
+          if (d < 1.68) { const f = smooth(1.42, 1.68, d); return [thigh, thigh + 1, 1 - f, f]; }
+          if (d < 2.55) return [thigh + 1, 0, 1, 0];
+          if (d < 2.75) { const f = smooth(2.55, 2.75, d); return [thigh + 1, thigh + 2, 1 - f, f]; }
+          return [thigh + 2, 0, 1, 0];
+        },
+      }));
+    }
+
+    // a claw: along +x, curving down (spike along +y bending +x, turned so +y -> +x and +x -> -y)
+    const claw = (len, r, bend, dir, at) => {
+      const g = spikeColors(curvedSpike(len, r, bend, 10, 7), len, hornRoot, hornTip);
+      g.rotateZ(-Math.PI / 2);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(1, 0, 0), dir.clone().normalize()));
+      return g.translate(at.x, at.y, at.z);
+    };
+
+    // ---------------- feet: three heavy toes and a dewclaw ----------------
+    for (const [toeBone, z] of [[B.toeR, HIP_Z], [B.toeL, -HIP_Z]]) {
+      const F = this.rest[toeBone];
+      [[-0.44, 0.48], [0, 0.62], [0.44, 0.48]].forEach(([ang, len]) => {
+        const dir = V(Math.cos(ang), 0, Math.sin(ang) * Math.sign(z));
+        const start = F.clone().add(V(-0.2, 0.12, 0));
+        const end = F.clone().add(dir.clone().multiplyScalar(len)).add(V(0, 0.08, 0));
+        const mid = start.clone().lerp(end, 0.5).add(V(0, 0.06, 0));
+        skinGeos.push(rigged(sweep({
+          points: [start, mid, end],
+          segments: 16, radial: 14, uvScale: [0.9, 0.8],
+          sideHint: V(-dir.z, 0, dir.x),
+          section: (t, a, out) => {
+            const r = 0.125 * (1 - 0.4 * t) * (1 + 0.14 * bump(t, 0.5, 0.15));
+            out.x = Math.sin(a) * r * 1.15; out.y = Math.cos(a) * r * 0.85;
+          },
+          color: (t, a, out) => mottle(out.copy(backCol).multiplyScalar(0.9), t * 3, Math.cos(a), ang),
+          capEnd: true,
+        }), toeBone));
+        keratin.push(rigged(claw(0.27, 0.065, 0.55, dir.clone().add(V(0, -0.25, 0)), end.clone().add(V(0, -0.02, 0))), toeBone));
+      });
+      const dew = spikeColors(curvedSpike(0.14, 0.04, -0.5, 8, 5), 0.14, hornRoot, hornTip).rotateZ(Math.PI / 2);
+      keratin.push(rigged(dew.translate(F.x - 0.3, F.y + 0.14, F.z), toeBone));
+    }
+
+    // ---------------- arms and hands (rigid to the chest) ----------------
+    for (const side of [1, -1]) {
+      const sh = V(1.74, 2.42, 0.5 * side), el = V(2.02, 2.0, 0.66 * side), wr = V(2.34, 1.86, 0.6 * side);
+      skinGeos.push(rigged(sweep({
+        points: [sh, sh.clone().lerp(el, 0.5).add(V(-0.02, 0, 0.04 * side)), el, el.clone().lerp(wr, 0.5), wr],
+        segments: 32, radial: 18, uvScale: [1.6, 1.2],
+        sideHint: V(0, 0, 1),
+        curveType: 'catmullrom',
+        section: (t, a, out) => {
+          const c = Math.cos(a), s = Math.sin(a);
+          const r = profile([0, 0.3, 0.5, 0.75, 1], [0.2, 0.16, 0.12, 0.11, 0.085], t)
+            * (1 + 0.15 * bump(t, 0.28, 0.12) * Math.max(0, c) + 0.1 * bump(t, 0.7, 0.12) * Math.max(0, -c));
+          out.x = s * r; out.y = c * r;
+        },
+        color: (t, a, out) => mottle(out.copy(midCol).lerp(backCol, 0.35 * t), t * 2, Math.cos(a), side),
+        capEnd: true,
+      }), B.chest));
+      [-0.5, -0.17, 0.17, 0.5].forEach((sp, i) => {
+        const len = i === 0 ? 0.12 : 0.17;
+        const dir = V(0.55, -0.75, sp * 0.5 * side).normalize();
+        const start = wr.clone().addScaledVector(dir, 0.03).add(V(0, 0, sp * 0.08 * side));
+        const tip = start.clone().addScaledVector(dir, len).add(V(0.01, -0.03, 0));
+        skinGeos.push(rigged(sweep({
+          points: [start, start.clone().lerp(tip, 0.5).add(V(0.015, 0, 0)), tip],
+          segments: 8, radial: 8, uvScale: [0.4, 0.3],
+          section: (t, a, out) => { const r = 0.038 * (1 - 0.35 * t); out.x = Math.sin(a) * r; out.y = Math.cos(a) * r; },
+          color: (t, a, out) => out.copy(midCol).multiplyScalar(0.85),
+          capEnd: true,
+        }), B.chest));
+        keratin.push(rigged(claw(0.1, 0.024, 0.5, dir, tip), B.chest));
+      });
+    }
+
+    // ---------------- head ----------------
+    const hp = this.rest[B.head];
+    const tilt = new THREE.Matrix4().makeRotationZ(HEAD_TILT);
+    const mouthY = (x) => -0.1 - 0.06 * x;
+    const toWorld = (g) => g.applyMatrix4(tilt).translate(hp.x, hp.y, hp.z);
+    const line = (x0, x1, n) => Array.from({ length: n }, (_, i) => { const x = x0 + ((x1 - x0) * i) / (n - 1); return V(x, mouthY(x)); });
+    const sH = [[-0.44, -0.05, 0.3, 0.7, 1.05, 1.3, 1.4], [0.44, 0.56, 0.6, 0.46, 0.36, 0.27, 0.1]];
+    const sW = [[-0.44, -0.05, 0.3, 0.7, 1.05, 1.3, 1.4], [0.4, 0.45, 0.38, 0.31, 0.27, 0.22, 0.1]];
+    const EYE_X = 0.4, EYE_A = 1.02, NOSE_X = 1.21, NOSE_A = 0.44;
+    const fold = (a) => (a > Math.PI ? 2 * Math.PI - a : a); // angle from the top, the same on both sides
+    // the skull's cross-section at x: brows over sunken sockets, cheeks, nostrils, scutes on the snout, lips
+    const skullSec = (x, a, out) => {
+      const c = Math.cos(a), s = Math.sin(a), af = fold(a);
+      const h = profile(sH[0], sH[1], x), w = profile(sW[0], sW[1], x);
+      const brow = bump(x, 0.34, 0.16) * bump(af, 0.68, 0.28);
+      const socket = bump(x, EYE_X, 0.075) * bump(af, EYE_A, 0.16);
+      const cheek = bump(x, -0.05, 0.22) * Math.max(0, 1 - c * 1.6);
+      const nostril = bump(x, NOSE_X, 0.055) * bump(af, NOSE_A, 0.13);
+      const scutes = Math.max(0, c) ** 6 * smooth(0.5, 0.9, x) * 0.012 * Math.max(0, Math.sin(x * 34));
+      const lip = bump(c, 0.06, 0.1) * 0.018 * smooth(-0.1, 0.3, x);
+      const squared = smooth(-0.2, 0.9, x);
+      out.x = sgnPow(s, 1 - 0.2 * squared) * (w + 0.1 * brow + 0.08 * cheek - 0.07 * socket + lip);
+      out.y = c >= 0 ? sgnPow(c, 1 - 0.25 * squared) * (h + 0.24 * brow + 0.03 * nostril - 0.05 * socket) + scutes : c * 0.06;
+    };
+    const SX0 = -0.44, SX1 = 1.4;
+    const lipC = backCol.clone().lerp(midCol, 0.3);
+    skinGeos.push(rigged(toWorld(sweep({
+      points: line(SX0, SX1, 8),
+      segments: 96, radial: 64, uvScale: [4.2, 3.4], curveType: 'catmullrom',
+      section: (t, a, out) => skullSec(SX0 + (SX1 - SX0) * t, a, out),
+      color: (t, a, out) => {
+        const x = SX0 + (SX1 - SX0) * t, c = Math.cos(a), af = fold(a);
+        if (c < -0.55) { out.copy(mouthCol); return; } // palate
+        out.copy(backCol).lerp(midCol, smooth(0.85, 0.2, c) * 0.6).lerp(lipC, smooth(0.1, -0.4, c));
+        out.multiplyScalar(1 - 0.45 * bump(x, EYE_X, 0.1) * bump(af, EYE_A, 0.22)); // shadowed sockets
+        out.multiplyScalar(1 - 0.5 * bump(x, NOSE_X, 0.04) * bump(af, NOSE_A, 0.08)); // nostril pits
+        mottle(out, x * 2, c, Math.sin(a));
+      },
+      capEnd: true,
+    })), B.head));
+
+    // eyes: an amber eyeball under a heavy lid, with a black slit pupil; nostrils
+    for (const side of [1, -1]) {
+      const sec = { x: 0, y: 0 };
+      skullSec(EYE_X, side > 0 ? EYE_A : 2 * Math.PI - EYE_A, sec);
+      const nrm = V(0, Math.cos(EYE_A), Math.sin(EYE_A) * side);
+      const look = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), nrm);
+      const ctr = V(EYE_X, mouthY(EYE_X) + sec.y, sec.x).addScaledVector(nrm, -0.012);
+      eyes.push(rigged(toWorld(new THREE.SphereGeometry(0.062, 20, 14).scale(1.15, 0.9, 1).translate(ctr.x, ctr.y, ctr.z)), B.head));
+      const pc = ctr.clone().addScaledVector(nrm, 0.058);
+      const pupil = new THREE.SphereGeometry(0.015, 10, 8).scale(0.75, 2.6, 0.45).applyQuaternion(look);
+      dark.push(rigged(toWorld(pupil.translate(pc.x + 0.008, pc.y, pc.z)), B.head));
+      const lc = ctr.clone().addScaledVector(nrm, 0.018);
+      const lid = new THREE.TorusGeometry(0.07, 0.024, 10, 28).scale(1.15, 0.85, 1).applyQuaternion(look);
+      skinGeos.push(rigged(toWorld(paint(lid.translate(lc.x, lc.y + 0.006, lc.z), backCol.clone().multiplyScalar(0.85))), B.head));
+      const ns = { x: 0, y: 0 };
+      skullSec(NOSE_X, side > 0 ? NOSE_A : 2 * Math.PI - NOSE_A, ns);
+      const nostril = new THREE.SphereGeometry(0.02, 10, 8).scale(1.3, 0.55, 0.8);
+      dark.push(rigged(toWorld(nostril.translate(NOSE_X, mouthY(NOSE_X) + ns.y - 0.005, ns.x * 0.92)), B.head));
+    }
+
+    // lower jaw: deep chin and throat, gums on top
+    const JX0 = -0.3, JX1 = 1.33;
+    const jD = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.46, 0.4, 0.32, 0.26, 0.2, 0.07]];
+    const jW = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.4, 0.37, 0.3, 0.25, 0.19, 0.08]];
+    const throatC = midCol.clone().lerp(bellyCol, 0.55);
+    skinGeos.push(rigged(toWorld(sweep({
+      points: line(JX0, JX1, 8),
+      segments: 80, radial: 56, uvScale: [3.8, 3.0], curveType: 'catmullrom',
+      section: (t, a, out) => {
+        const x = JX0 + (JX1 - JX0) * t, c = Math.cos(a), s = Math.sin(a);
+        const d = profile(jD[0], jD[1], x), w = profile(jW[0], jW[1], x);
+        const chin = bump(x, 1.12, 0.12) * 0.02 * Math.max(0, -c);
+        out.x = sgnPow(s, 0.8) * w * (c > 0 ? 0.93 : 1) * (1 + 0.04 * bump(x, -0.1, 0.2));
+        out.y = c >= 0 ? c * 0.025 - 0.012 : -sgnPow(-c, 0.85) * (d + chin);
+      },
+      color: (t, a, out) => {
+        const c = Math.cos(a);
+        if (c > 0.35 && t < 0.95) { out.copy(gumCol); return; }
+        out.copy(midCol).lerp(throatC, smooth(-0.2, -0.85, c));
+        mottle(out, t * 3, c, Math.sin(a), 0.8);
+      },
+      capEnd: true,
+    })), B.jaw));
+    // a tongue lying in the jaw
+    skinGeos.push(rigged(toWorld(sweep({
+      points: line(-0.15, 0.95, 5).map((p) => p.add(V(0, -0.045))),
+      segments: 20, radial: 16, uvScale: [0.6, 0.4],
+      section: (t, a, out) => { const w = 0.13 * (1 - 0.6 * t * t); out.x = Math.sin(a) * w; out.y = Math.cos(a) * 0.035 * (1 - 0.5 * t); },
+      color: (t, a, out) => out.copy(tongueCol),
+      capStart: true, capEnd: true,
+    })), B.jaw));
+
+    // teeth: curved and uneven, big canines near the front, a second large pair mid-jaw
+    for (let i = 0; i < 12; i++) {
+      const x = 0.1 + i * 0.1;
+      const big = Math.max(bump(x, 1.0, 0.07), 0.6 * bump(x, 0.5, 0.05));
+      const zU = profile(sW[0], sW[1], x) * 0.88;
+      for (const s of [1, -1]) {
+        const len = (0.08 + 0.11 * big) * (0.85 + 0.3 * rnd());
+        const tooth = spikeColors(curvedSpike(len, 0.024 + 0.014 * big, 0.35, 8, 6), len, ivoryRoot, ivory).rotateZ(Math.PI);
+        keratin.push(rigged(toWorld(tooth.translate(x, mouthY(x) + 0.01, zU * s)), B.head));
+        if (i % 2 === 0 && x > 0.15 && x < 1.2) {
+          const lx = x + 0.05;
+          const ll = (0.07 + 0.06 * bump(lx, 0.95, 0.1)) * (0.85 + 0.3 * rnd());
+          const lo = spikeColors(curvedSpike(ll, 0.022, -0.3, 8, 6), ll, ivoryRoot, ivory);
+          keratin.push(rigged(toWorld(lo.translate(lx, mouthY(lx) - 0.01, profile(jW[0], jW[1], lx) * 0.82 * s)), B.jaw));
+        }
+      }
+    }
+
+    // ---------------- dorsal plates ----------------
+    const plates = this._buildPlatesHD();
+
+    const skinGeo = mergeGeometries(skinGeos.map(clean), false);
+    const skinMesh = new THREE.SkinnedMesh(skinGeo, this.skinMat);
+    skinMesh.add(this.bones[0]);
+    skinMesh.updateMatrixWorld(true);
+    this.skeleton = new THREE.Skeleton(this.bones);
+    skinMesh.bind(this.skeleton);
+    const mk = (geo, mat) => {
+      const m = new THREE.SkinnedMesh(geo, mat);
+      m.bind(this.skeleton, skinMesh.bindMatrix);
+      return m;
+    };
+    const eyeMesh = mk(mergeGeometries(eyes.map(clean), false), this.eyeMat);
+    const darkMesh = mk(mergeGeometries(dark.map(clean), false), this.darkMat);
+    this.meshes = [skinMesh, mk(mergeGeometries(keratin.map(clean), false), this.ivoryMat), eyeMesh, darkMesh, mk(plates, this.plateMat)];
+    for (const m of this.meshes) {
+      m.castShadow = m !== eyeMesh && m !== darkMesh;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+      this.group.add(m);
+    }
+  }
+
+  /** Very High plates: every plate its own shape, thick and ridged, bone-coloured; more of them, down to the tail tip. */
+  _buildPlatesHD() {
+    const tk = this.tk;
+    const geos = [];
+    const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3();
+    const Z = V(0, 0, 1);
+    let seed = 1000;
+    const place = (t, size, lateral, tiltOut, rows = 30) => {
+      const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
+      this.curve.getPointAt(t, P);
+      this.curve.getTangentAt(t, T);
+      N.crossVectors(Z, T).normalize();
+      const g = plateGeometry(++seed, rows);
+      g.scale(size * 0.95, size, 0.8 + size * 0.5);
+      plateColors(g, size, seed);
+      const p = g.attributes.position;
+      g.setAttribute('aPlateT', new THREE.BufferAttribute(new Float32Array(p.count).fill(t), 1));
+      g.rotateX(tiltOut);
+      g.rotateZ(Math.atan2(T.y, T.x));
+      const a = lateral * 0.62;
+      const off = N.clone().multiplyScalar(Math.cos(a) * ry * 0.8).add(Z.clone().multiplyScalar(Math.sin(a) * rz * 0.85));
+      g.translate(P.x + off.x, P.y + off.y, P.z + off.z);
+      const sk = this.spineSkin(t);
+      const si = new Uint16Array(p.count * 4), sw = new Float32Array(p.count * 4);
+      for (let i = 0; i < p.count; i++) { si[i * 4] = sk[0]; si[i * 4 + 1] = sk[1]; sw[i * 4] = sk[2]; sw[i * 4 + 1] = sk[3]; }
+      g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+      g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      geos.push(g);
+    };
+    // small scutes down to the tail tip
+    for (let i = 0; i < 5; i++) place(tk[0] + 0.015 + (tk[1] - 0.03 - tk[0] - 0.015) * (i / 4), 0.14 + 0.03 * i, 0, 0, 14);
+    // central row
+    const t0 = tk[1] - 0.02, t1 = (tk[8] + tk[9]) / 2;
+    const n = 20;
+    for (let i = 0; i < n; i++) {
+      const t = t0 + (t1 - t0) * (i / (n - 1));
+      const k = i / (n - 1);
+      const size = 0.32 + 0.95 * Math.sin(Math.pow(k, 0.85) * Math.PI) ** 1.2 * (k < 0.75 ? 1 : 1 - (k - 0.75) * 1.4);
+      place(t, Math.max(0.25, size * (i % 2 ? 0.94 : 1)), 0, 0);
+    }
+    // two side rows, staggered against the centre
+    const s0 = tk[3], s1 = tk[8];
+    for (let i = 0; i < 11; i++) {
+      const k = i / 10;
+      const t = s0 + (s1 - s0) * k;
+      const size = 0.22 + 0.36 * Math.sin(k * Math.PI);
+      place(t + 0.012, size, 1, 0.5, 20);
+      place(t + 0.012, size, -1, -0.5, 20);
+    }
+    return mergeGeometries(geos.map((g) => {
+      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'aPlateT', 'skinIndex', 'skinWeight'].includes(k)) g.deleteAttribute(k);
+      return g.index ? g.toNonIndexed() : g;
+    }), false);
   }
 
   /**

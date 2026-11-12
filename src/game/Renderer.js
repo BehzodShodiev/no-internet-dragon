@@ -12,7 +12,14 @@ export const QUALITY = {
   low: { pr: 1.0, msaa: 0, shadow: 1024, soft: false, bloom: false, terrain: 200, density: 0.4 },
   medium: { pr: 1.5, msaa: 2, shadow: 2048, soft: true, bloom: true, terrain: 400, density: 0.7 },
   high: { pr: 2.0, msaa: 4, shadow: 2048, soft: true, bloom: true, terrain: 400, density: 1 },
+  // veryhigh: manual only (Auto never picks it). 1.5x supersampled up to 3x, 4096 shadows reaching twice as
+  // far forward in 3D, a finer terrain, 16x texture filtering and the detailed monster models.
+  veryhigh: { pr: 3.0, ss: 1.5, msaa: 4, shadow: 4096, reach: 2, soft: true, bloom: true, terrain: 640, density: 1, aniso: 16, models: 'hd' },
 };
+
+// Very High's drawing buffer stays under this many pixels (a 4K screen at 3x would need several hundred MB
+// of render targets), but never below what High would draw.
+const MAX_PX = 9e6;
 
 // Clamps HDR values and removes NaN/Inf before bloom, so a single bad pixel can never black out the frame.
 const SanitizeShader = {
@@ -212,7 +219,8 @@ export class Renderer {
     if (this.light) {
       // shadows off on Very Low (a whole pass saved; lit materials rebuild once, between runs)
       this.light.castShadow = q.shadow > 0;
-      if (q.shadow) this.light.shadow.mapSize.set(q.shadow, q.shadow);
+      const sh = Math.min(q.shadow, this.renderer.capabilities.maxTextureSize);
+      if (q.shadow) this.light.shadow.mapSize.set(sh, sh);
       if (this.light.shadow.map) {
         this.light.shadow.map.dispose();
         this.light.shadow.map = null;
@@ -223,7 +231,10 @@ export class Renderer {
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    const pr = Math.min(window.devicePixelRatio || 1, this.quality.pr) * this.scale;
+    const q = this.quality, dpr = window.devicePixelRatio || 1;
+    let pr = Math.min(dpr * (q.ss || 1), q.pr);
+    if (q.ss && w * h * pr * pr > MAX_PX) pr = Math.max(Math.sqrt(MAX_PX / (w * h)), Math.min(dpr, QUALITY.high.pr));
+    pr *= this.scale;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     if (this.composer) {

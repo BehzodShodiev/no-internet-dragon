@@ -83,7 +83,7 @@ export const CFG = {
   bossEvery: 14000, // after the first gunship, the next comes once you've scored this many more points (was 7000: too often)
 };
 
-const qualityLabel = (name) => (name === 'verylow' ? 'VERY LOW' : name.toUpperCase());
+const qualityLabel = (name) => ({ verylow: 'VERY LOW', veryhigh: 'VERY HIGH' })[name] || name.toUpperCase();
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -139,7 +139,7 @@ export class Game {
     this.dayT = 0.035;
     this.settings = {
       view: store.get('dragon.view', '3d'),
-      quality: ['auto', 'high', 'medium', 'low', 'verylow'].includes(store.get('dragon.quality', 'auto')) ? store.get('dragon.quality', 'auto') : 'auto',
+      quality: ['auto', 'veryhigh', 'high', 'medium', 'low', 'verylow'].includes(store.get('dragon.quality', 'auto')) ? store.get('dragon.quality', 'auto') : 'auto',
     };
     this.boxes = Array.from({ length: 8 }, () => new Float32Array(4));
     const params = new URLSearchParams(location.search);
@@ -320,7 +320,7 @@ export class Game {
 
   /** Builds a monster's model (hidden) and keeps it for later picks. */
   _buildMonster(m) {
-    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant));
+    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant, this.modelDetail || 'std'));
     d.onFootstep = (leg, fx) => this._footstep(leg, fx);
     d.onWingbeat = (k) => this._wingbeat(k);
     d.group.visible = false;
@@ -339,11 +339,7 @@ export class Game {
       if (this.state !== 'title' && this.state !== 'over') { setTimeout(next, 3000); return; }
       const m = queue.shift();
       if (!this.dragons[m.id]) this._buildMonster(m);
-      const gl = this.renderer.renderer;
-      gl.setRenderTarget(this.renderer.scenePass.target); // compile for the target the scene draws into
-      const done = gl.compileAsync(this.scene, this.camera).catch(() => {});
-      gl.setRenderTarget(null);
-      done.then(() => setTimeout(next, 400));
+      this._compileScene().then(() => setTimeout(next, 400));
     };
     setTimeout(next, this.sim ? 0 : 2500);
   }
@@ -773,6 +769,7 @@ export class Game {
     this.hud.setMenu(true);
     this.hud.show('title', true);
     if (this.pendingPreset) this._autoPreset(this.pendingPreset);
+    this._applyModels();
     this._onBoard();
   }
 
@@ -854,7 +851,7 @@ export class Game {
   }
 
   _cycleQuality() {
-    const order = ['auto', 'high', 'medium', 'low', 'verylow'];
+    const order = ['auto', 'veryhigh', 'high', 'medium', 'low', 'verylow'];
     const next = order[(order.indexOf(this.settings.quality) + 1) % order.length];
     this._setQuality(next, true);
   }
@@ -884,6 +881,53 @@ export class Game {
     const q = QUALITY[name];
     this.scenery.setDensity(q.density);
     if (Math.round(800 / this.terrain.cell) !== q.terrain) this.terrain.setResolution(q.terrain);
+    this.env.shadowReach = q.reach || 1;
+    // texture filtering: the textures made at 8x get the preset's level (16x on Very High), others keep theirs
+    const aniso = Math.min(q.aniso || 8, this.renderer.renderer.capabilities.getMaxAnisotropy());
+    for (const v of Object.values(this.tex)) {
+      for (const t of v?.isTexture ? [v] : Object.values(v || {})) {
+        if (!t?.isTexture) continue;
+        t.userData.aniso0 ??= t.anisotropy;
+        const want = t.userData.aniso0 >= 8 ? Math.max(aniso, 1) : t.userData.aniso0;
+        if (t.anisotropy !== want) { t.anisotropy = want; t.needsUpdate = true; }
+      }
+    }
+    this.wantModels = q.models || 'std';
+    this._applyModels();
+  }
+
+  /**
+   * Swaps the monster models to the preset's detail level (the detailed Kaiju on Very High). Only on menus:
+   * a change during a run waits for it to end. The new model's shaders compile in the background.
+   */
+  _applyModels() {
+    const want = this.wantModels || 'std';
+    if ((this.modelDetail || 'std') === want || !this.dragons) return;
+    if (this.state === 'running' || this.state === 'intro' || this.state === 'dying' || this.state === 'paused') return;
+    this.modelDetail = want;
+    for (const id of Object.keys(this.dragons)) {
+      const old = this.dragons[id];
+      if (!(old instanceof Dragon) || old.variant !== 'kaiju') continue; // only the Kaiju has a detailed model so far
+      const d = this._buildMonster(MONSTERS.find((x) => x.id === id));
+      d.group.position.copy(old.group.position);
+      d.group.visible = old.group.visible;
+      this.scene.remove(old.group);
+      // a background compile may still be waiting on the old materials: free them once it has finished
+      Promise.allSettled([...(this.compiles || [])]).then(() => old.dispose());
+      if (this.dragon === old) { this.dragon = d; this._applyLook(); }
+    }
+    if (this.state !== 'loading') this._compileScene(); // (while loading, the loader's prewarm compiles it)
+  }
+
+  /** Compiles the scene's shaders in the background, for the target the scene draws into. */
+  _compileScene() {
+    const gl = this.renderer.renderer;
+    gl.setRenderTarget(this.renderer.scenePass.target);
+    const p = gl.compileAsync(this.scene, this.camera).catch(() => {});
+    gl.setRenderTarget(null);
+    (this.compiles ||= new Set()).add(p);
+    p.then(() => this.compiles.delete(p));
+    return p;
   }
 
   // ------------------------------------------------------------------ leaderboard
@@ -1576,6 +1620,7 @@ export class Game {
         this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
         this.audio.music?.stinger(this.isBest ? 'best' : 'over');
         if (this.pendingPreset) this._autoPreset(this.pendingPreset); // a quality change waits for the run to end
+        this._applyModels();
         this.hud.setMenu(true);
         this.hud.resetRival();
         this.hud.setBoss('', -1, 0);
