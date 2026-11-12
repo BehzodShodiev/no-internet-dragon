@@ -149,7 +149,7 @@ export class Game {
     this.flashColor = new THREE.Color(1, 0.25, 0.1);
     this.dayT = 0.035;
     this.settings = {
-      view: store.get('dragon.view', '3d'),
+      view: store.get('dragon.view', '2d'), // new players start in the classic 2D view (a hint offers 3D)
       quality: ['auto', 'veryhigh', 'high', 'medium', 'low', 'verylow'].includes(store.get('dragon.quality', 'auto')) ? store.get('dragon.quality', 'auto') : 'auto',
     };
     this.boxes = Array.from({ length: 8 }, () => new Float32Array(4));
@@ -198,6 +198,7 @@ export class Game {
   /** Per-run state shared by the first start and every restart. */
   _resetRun() {
     this.seed = (this.seedBase + this.runCount++) >>> 0;
+    this.viewHintT = 8; // seconds into the run before the 3D hint (see _viewHint)
     this.score = 0;
     this.dist = 0;
     this.chain = 0;
@@ -877,6 +878,22 @@ export class Game {
     this.hud.setView(mode);
     this.hud.toast(mode === '3d' ? '3D view · faster run' : '2D view · classic pace');
     store.set('dragon.view', mode);
+    if (!this.tips.viewTried) { this.tips.viewTried = true; store.set('dragon.tips', JSON.stringify(this.tips)); }
+  }
+
+  /**
+   * A few seconds into a run in 2D, a hint at the bottom offers the 3D view: in the first three runs, and
+   * never again once the player has switched views.
+   */
+  _viewHint(dt) {
+    if (this.tips.viewTried || (this.tips.viewHints || 0) >= 3 || this.rig.mode !== '2d' || this.sim || !(this.viewHintT > 0)) return;
+    this.viewHintT -= dt;
+    if (this.viewHintT > 0) return;
+    if (this.hud.bannerBusy()) { this.viewHintT = 0.5; return; } // a banner is up: try again in a moment
+    this.viewHintT = 0; // once per run
+    this.tips.viewHints = (this.tips.viewHints || 0) + 1;
+    store.set('dragon.tips', JSON.stringify(this.tips));
+    this.hud.toast(this.coarseMQ.matches ? 'Tap 3D at the top to see the run in 3D' : 'Press V to switch to the 3D view', 3600);
   }
 
   toggleMute() {
@@ -1754,6 +1771,7 @@ export class Game {
       this.obstacles.update(dt, this.speed, this.dist, hard);
       this._updateReflected();
       this._checkTips();
+      this._viewHint(dt);
     } else if (this.state === 'dying') {
       this.obstacles.update(dt, this.speed, this.dist, hard);
     }

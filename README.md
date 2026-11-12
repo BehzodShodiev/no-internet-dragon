@@ -1,6 +1,6 @@
 # No Internet Dragon
 
-A realistic take on the classic offline runner. A giant atomic lizard runs, jumps, ducks and smashes its way through three levels (a desert army outpost, a city at night and a volcano fortress), each ending in a gunship fight. You can switch between the classic side-scrolling **2D** view and a third-person **3D** view at any moment, even mid-run.
+A realistic take on the classic offline runner. A giant atomic lizard runs, jumps, ducks and smashes its way through three levels (a desert army outpost, a city at night and a volcano fortress), each ending in a gunship fight. You can switch between the classic side-scrolling **2D** view and a third-person **3D** view at any moment, even mid-run. New players start in 2D; a few seconds into each of their first three runs a hint at the bottom offers 3D (V, or the 3D button), until they have switched once.
 
 Everything is generated in code: the creature, textures, terrain, sky and sound. The game downloads no assets and plays fully offline.
 
@@ -23,9 +23,9 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Jump (hold for higher; as Moth Queen, keep holding to glide) | `Space` / `↑` / `W` | tap, or the ↑ button |
-| Smash | `→` / `D` / `E` | claw button |
-| Duck / fast-fall | `↓` / `S` | swipe down, or the ↓ button |
+| Jump (hold for higher; as Moth Queen, keep holding to glide) | `Space` / `в†‘` / `W` | tap, or the в†‘ button |
+| Smash | `в†’` / `D` / `E` | claw button |
+| Duck / fast-fall | `в†“` / `S` | swipe down, or the в†“ button |
 | Atomic breath (when the meter is full) | `F` / `X` / `Shift` | flame button |
 | Kaiju Rage (when the rage meter is full) | `R` / `G` | rage button (appears when ready) |
 | Switch 2D / 3D | `V` / `C` | 2D/3D toggle (top left) |
@@ -34,20 +34,20 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 | Mute | `M` | speaker button |
 | Graphics quality | `Q` | quality button |
 | Company leaderboard | `L` | trophy button |
-| Pick a level (title / game over) | `1` `2` `3`, or `←` `→` on the title | level cards / buttons |
+| Pick a level (title / game over) | `1` `2` `3`, or `в†ђ` `в†’` on the title | level cards / buttons |
 | Pick a skin (title / game over) | `K` | colour swatches |
 | Monsters panel (title / game over) | `B` | Monster button |
 
 The rules follow the classic offline runner. The speed ramps up over about two minutes. Pterodactyls appear after 250 points of distance at three heights: jump the low ones, duck the middle ones, run under the high ones. Every 100 points of distance beeps, and the high score is saved. the atomic lizard's breath is the core addition: every run starts with the meter mostly full, it fills as you run (70 points of distance for a full charge), and when it's full it clears everything in front of you for bonus points. Pressing it early shows how far along the charge is. (Distance points are the score before the combo multiplier described below.)
 
-The two views play differently. In 2D you see about 20 units of track ahead, like the classic game. The 3D camera sees six times further, so 3D makes up for it: the world runs 20% faster and speeds up 1.5× quicker, obstacles come in tighter sequences, and pterodactyls arrive from 120 points and three times as often. The breath charges at the same rate in both views. Switching views mid-run eases between the two rule sets, and since points come from distance, 3D scores faster.
+The two views play differently. In 2D you see about 20 units of track ahead, like the classic game. The 3D camera sees six times further, so 3D makes up for it: the world runs 20% faster and speeds up 1.5Г— quicker, obstacles come in tighter sequences, and pterodactyls arrive from 120 points and three times as often. The breath charges at the same rate in both views. Switching views mid-run eases between the two rule sets, and since points come from distance, 3D scores faster.
 
 ## Kaiju Rampage
 
 On top of the classic rules, each run has goals, a power-up and set pieces:
 
 - **Smash.** A jaws-first lunge that breaks most things just ahead of the snout: cacti, tanks, helicopters, cars, watchtowers, fuel tanks and buildings, each for points and combo, with a freeze-frame and flying debris. Boulders and steel anti-tank "hedgehogs" are too solid (they clang), so jump those. Watchtowers, fuel tanks and buildings are too tall to jump, so smash them or burn them with the breath. The jaws stay dangerous for 0.45 s and reach 3 units ahead, so the timing is forgiving, but a smash that hits nothing has a longer cooldown, so mashing the key is a gamble. Smash a shell or missile just before it hits and it flies back: a reflected shell destroys the tank that fired it, and a reflected missile damages the gunship. Timing pays: a bite pressed at the last instant (the target within 1.2 units of the jaws) is **PERFECT** (double points, +2 combo, a heavier freeze-frame), smashes within 1.5 s of each other make a DOUBLE or TRIPLE SMASH, and biting a flyer out of the air is a SKY BITE; together they never pay more than double. Every smash also adds a little Kaiju Rage.
-- **Radiation crystals and combos.** Crystals are laid along the arc of a full jump over obstacles, in lines you collect just by running, and in high trios that are worth an extra jump if there's room. Every crystal, every obstacle cleared and every close call adds to a combo chain. The multiplier rises to ×2 at 10, ×3 at 30, ×4 at 60 and ×5 at 100, and applies to every point you earn. Let a crystal slip past and the chain resets, with two exceptions: crystals arcing over something you smash or burn fly to you instead, and skipping a high bonus trio costs nothing. Every obstacle the breath burns adds to the chain too (three or more in one breath is a MULTI-BURN). A jump pressed up to 0.12 s before landing still happens the moment you land.
+- **Radiation crystals and combos.** Crystals are laid along the arc of a full jump over obstacles, in lines you collect just by running, and in high trios that are worth an extra jump if there's room. Every crystal, every obstacle cleared and every close call adds to a combo chain. The multiplier rises to Г—2 at 10, Г—3 at 30, Г—4 at 60 and Г—5 at 100, and applies to every point you earn. Let a crystal slip past and the chain resets, with two exceptions: crystals arcing over something you smash or burn fly to you instead, and skipping a high bonus trio costs nothing. Every obstacle the breath burns adds to the chain too (three or more in one breath is a MULTI-BURN). A jump pressed up to 0.12 s before landing still happens the moment you land.
 - **Close calls.** Clearing an obstacle by less than about a third of a unit pops "CLOSE!" for bonus points and extra combo. Ducking under a flyer only counts if you ducked at the last moment (within 0.25 s).
 - **Kaiju Rage.** 40 crystals fill the rage meter (smashes help a little), and then it waits for you: press `R` (or the rage button on touch screens) when you want it, in a packed stretch or against the gunship. For 7 seconds the dragon grows by a third, its plates burn red, the world speeds up 15%, nearby crystals fly to it, anything it touches explodes for points, and shells and missiles that touch it are batted straight back.
 ## Levels
@@ -56,11 +56,11 @@ Pick one on the title screen (the world behind the menu changes to match) or str
 
 | Level | Stages | Character |
 | --- | --- | --- |
-| **1 · Desert Outpost** ★ | Desert run → Army outpost → Gunship | The classic pace, with a day/night cycle. Cacti, pterodactyls, tanks, attack helicopters, watchtowers, fuel tanks, steel hedgehogs. |
-| **2 · Night City** ★★ | City rampage → City siege → Gunship over the city | 12% faster, always at blue hour. A road with street lamps and pools of light, a lit skyline, cars with headlights, buildings to flatten, then the army in the streets. |
-| **3 · Volcano Fortress** ★★★ | Ashlands → Inferno fortress → Inferno gunship | 25% faster, under an ember sky. Ash with glowing lava veins, lava pools to jump, meteors that mark their landing spot and leave a burning crater, basalt pillars to smash, then the army again. |
+| **1 В· Desert Outpost** в… | Desert run в†’ Army outpost в†’ Gunship | The classic pace, with a day/night cycle. Cacti, pterodactyls, tanks, attack helicopters, watchtowers, fuel tanks, steel hedgehogs. |
+| **2 В· Night City** в…в… | City rampage в†’ City siege в†’ Gunship over the city | 12% faster, always at blue hour. A road with street lamps and pools of light, a lit skyline, cars with headlights, buildings to flatten, then the army in the streets. |
+| **3 В· Volcano Fortress** в…в…в… | Ashlands в†’ Inferno fortress в†’ Inferno gunship | 25% faster, under an ember sky. Ash with glowing lava veins, lava pools to jump, meteors that mark their landing spot and leave a burning crater, basalt pillars to smash, then the army again. |
 
-Some tanks fire a shell first; a tank only fires when the track between it and the dragon is clear, and the shell comes with an on-screen JUMP or DUCK marker. The **gunship** hovers ahead and fires missile volleys at jump or duck height, each flagged 0.9 s before launch. The beam tilts up to meet it, and a hit never stops it firing: it retaliates sooner instead. Breath hits and reflected missiles each take one hit point (4 on the first gunship, one more on the City and Volcano and for every gunship downed), and it's worth 500 × your multiplier. The first gunship ends the first loop; after that one returns every 14,000 points (a toast tells you the next score), wherever you are in the loop. Harder levels also tighten the gaps, arm more tanks, and make you earn your power: the breath charges at 85% speed in the City and 72% on the Volcano, and during gunship fights it charges slower still on every level (75%, 65% and 60%), and Kaiju Rage needs 55 and 70 crystals instead of 40.
+Some tanks fire a shell first; a tank only fires when the track between it and the dragon is clear, and the shell comes with an on-screen JUMP or DUCK marker. The **gunship** hovers ahead and fires missile volleys at jump or duck height, each flagged 0.9 s before launch. The beam tilts up to meet it, and a hit never stops it firing: it retaliates sooner instead. Breath hits and reflected missiles each take one hit point (4 on the first gunship, one more on the City and Volcano and for every gunship downed), and it's worth 500 Г— your multiplier. The first gunship ends the first loop; after that one returns every 14,000 points (a toast tells you the next score), wherever you are in the loop. Harder levels also tighten the gaps, arm more tanks, and make you earn your power: the breath charges at 85% speed in the City and 72% on the Volcano, and during gunship fights it charges slower still on every level (75%, 65% and 60%), and Kaiju Rage needs 55 and 70 crystals instead of 40.
 
 **Rhythm and set pieces.** Runs have a tempo instead of one random obstacle at a time: a warm-up, waves, a short breather with one long gap and a long line of crystals, and a peak where the gaps run tight. The last ten seconds before every gunship are always a peak. Waves and peaks can open with a **set piece**, a short authored sequence announced with a banner: a cactus staircase (one, two, then three cacti) in the Desert; a checkpoint (hedgehog, watchtower, hedgehog) and a tank convoy at the Army outpost; a **traffic jam** (two or three cars piled nose to tail, too long to jump: one smash takes the lot) and a block buster (three buildings in a row: in the Siege, and in the Rampage from its second loop) in the City; a meteor shower and lava hopscotch in the Ashlands; the fortress gate (pillar, hedgehog, pillar) in the Inferno. The first wave of every run opens with one. Set pieces never squeeze a gap below the normal minimum, contain no flyers and their tanks don't fire. When a gunship falls, a four-second **Crystal Rush** follows: a river of crystals and nothing to dodge, then the next stage.
 
@@ -89,8 +89,8 @@ Everyone starts with the **Kaiju** (the dragon above, with its skins) and the **
 | Monster | How to unlock | Notes |
 | --- | --- | --- |
 | Kaiju | from the start | twelve skins |
-| **Golden Hydra** | down 5 gunships in total | three heads (staggered so all three read in 2D), two tails, golden wings, gravity beams from every mouth; wide build: hitbox 115%, score ×1.15 |
-| **Moth Queen** | collect 500 crystals in total | a giant moth that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing wing patterns, a wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score ×0.9 |
+| **Golden Hydra** | down 5 gunships in total | three heads (staggered so all three read in 2D), two tails, golden wings, gravity beams from every mouth; wide build: hitbox 115%, score Г—1.15 |
+| **Moth Queen** | collect 500 crystals in total | a giant moth that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing wing patterns, a wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score Г—0.9 |
 | **Rex** | from the start (new players begin with it) | a tyrant lizard with a huge head, tiny arms and no plates. Two skins: **Pixel** (the default: the model rebuilt from cubes by `Voxel.js`) and **Classic** (smooth, olive with tiger stripes). Its attack is the **Tooth Quake**: instead of a beam, a wave of giant teeth erupts from the ground ahead of it (cube teeth for Pixel, sculpted fangs for Classic, `world/Teeth.js`) and skewers what is in the way. It hits exactly what the beam would, so scores compare fairly. Both skins share the Kaiju's skeleton and play identically |
 
 Every monster has the Kaiju's hitbox heights (running, ducking and in the air), so size never makes anything easier or harder to clear; only the width varies. More are planned; see `docs/ROADMAP.md`.
@@ -120,12 +120,12 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 
 ## Performance
 
-- Quality presets are Very Low (75% resolution, no shadows, bloom or smoothing, for weak laptops and old phones), Low, Medium, High and Very High. **Very High** (manual only: Auto never picks it) renders 1.5× supersampled (up to 3×, the drawing buffer capped at 9 MP but never below High), with 4096 shadows reaching twice as far ahead in 3D, a 640-segment terrain, 16× texture filtering and the detailed Kaiju model (`Dragon` with `detail = 'hd'`: muscled body, hands, carved head with lidded slit-pupil eyes, curved teeth and claws, ridged bone plates; same skeleton, so identical hitboxes). The model swaps only between runs. **Auto** (the default) starts at Medium on every device (and never climbs above it) and adjusts render resolution first. It only steps down when the GPU is what is slow (it times the GPU where the browser allows), so a 30 fps cap, a 50 Hz display or a busy CPU leave quality alone; a preset change waits for the end of the run, and with steady headroom it climbs back up.
+- Quality presets are Very Low (75% resolution, no shadows, bloom or smoothing, for weak laptops and old phones), Low, Medium, High and Very High. **Very High** (manual only: Auto never picks it) renders 1.5Г— supersampled (up to 3Г—, the drawing buffer capped at 9 MP but never below High), with 4096 shadows reaching twice as far ahead in 3D, a 640-segment terrain, 16Г— texture filtering and the detailed Kaiju model (`Dragon` with `detail = 'hd'`: muscled body, hands, carved head with lidded slit-pupil eyes, curved teeth and claws, ridged bone plates; same skeleton, so identical hitboxes). The model swaps only between runs. **Auto** (the default) starts at Medium on every device (and never climbs above it) and adjusts render resolution first. It only steps down when the GPU is what is slow (it times the GPU where the browser allows), so a 30 fps cap, a 50 Hz display or a busy CPU leave quality alone; a preset change waits for the end of the run, and with steady headroom it climbs back up.
 - Every shader, the post-processing ones included, compiles during loading against the target it really draws into, and the other monsters are built and compiled in the background while the title is idle, so neither a run nor picking a monster stalls.
 - Only the scene is multisampled: bloom and the final pass (tone mapping and grade merged into one draw) work on plain half-float targets. The sky lighting re-bakes into the same targets every time, so it allocates nothing and never invalidates materials.
 - Background props use lighter meshes than the obstacles you run into (the far saguaros alone were 1.3 million triangles per pass). Obstacles, including their meshes, are pooled and restyled; scenery is instanced; particles reuse fixed buffers; the main loop allocates nothing; the HUD only touches the page when a value changes; in-run buttons skip the frosted-glass blur; paused and menu screens redraw less often.
 - Procedural textures are cached in the browser after the first visit (keyed to the generator code), so repeat visits reach the title in about 1.2 s instead of 3.7 s.
-- Measured in headless Chrome on an Intel iGPU at 1280×720 on High (`npm run test:perf`): GPU time per frame 2.7–3.6 ms across the Desert, City, Volcano gunship and 2D night scenes (down from 4.3–6.1 ms), under 1 million triangles a frame (down from up to 3.7 million), no frames over 50 ms. With the GPU running flat out a frame costs 2.4–2.7 ms. Sky and fireball noise is read from one baked texture rather than computed, which keeps those shaders quick to compile and draw.
+- Measured in headless Chrome on an Intel iGPU at 1280Г—720 on High (`npm run test:perf`): GPU time per frame 2.7вЂ“3.6 ms across the Desert, City, Volcano gunship and 2D night scenes (down from 4.3вЂ“6.1 ms), under 1 million triangles a frame (down from up to 3.7 million), no frames over 50 ms. With the GPU running flat out a frame costs 2.4вЂ“2.7 ms. Sky and fireball noise is read from one baked texture rather than computed, which keeps those shaders quick to compile and draw.
 
 ## Testing
 
@@ -144,7 +144,7 @@ src/
   game/Stages.js          the three levels and their stage loops
   game/Patterns.js        pacing director (tempo phases, crescendo) and each stage's set pieces
   game/Leaderboard.js     company leaderboard on the artifact's shared store
-  game/CameraRig.js       2D ⇄ 3D camera blend, title orbit, shake
+  game/CameraRig.js       2D в‡„ 3D camera blend, title orbit, shake
   game/Renderer.js        renderer, post-processing chain, quality, dynamic resolution
   game/Input.js           keyboard / pointer / touch buttons
   game/Audio.js           synthesized sound effects, the mix (buses, limiter, reverb), ambience and voices
