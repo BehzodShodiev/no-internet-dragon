@@ -147,7 +147,13 @@ export class HUD {
     }
   }
 
+  /** Whether a banner is still on screen (they last 2.4 s). */
+  bannerBusy() {
+    return performance.now() - (this.bannerAt || -1e9) < 2500;
+  }
+
   banner(sub, title, kind = '') {
+    this.bannerAt = performance.now();
     const b = this.el.banner;
     this.el.bannerSub.textContent = sub;
     this.el.bannerTitle.textContent = title;

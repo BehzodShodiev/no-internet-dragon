@@ -4,6 +4,7 @@ import { sweep, blob, mergeLoose, setVertexColor } from '../gfx/geometry.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mulberry32, createNoise, hash32 } from '../gfx/noise.js';
 import { Military } from './Military.js';
+import { Director, GAP, BREATHER_GAP } from '../game/Patterns.js';
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
 const smooth = (a, b, x) => {
@@ -213,6 +214,10 @@ const COLLAPSE = { building: true, tower: true };
 const WRECK_TIME = 0.9;
 export const PTERO_HEIGHTS = [0.95, 1.95, 3.2];
 const SHELL_SPEED = 16; // on top of the ground speed
+// Crystal Rush (after a gunship falls): a river of crystals and nothing to dodge
+const RUSH_STEP = 3.5; // units between crystals (sparse: every crystal also feeds the combo chain)
+const RUSH_TAIL = 1.2; // the river ends this many seconds' run before the rush does: a clear run-in to the next obstacle
+const JAM_PITCH = 2.5; // spacing of the cars in a traffic jam
 const FLYERS = ['ptero', 'heli', 'shell', 'missile'];
 export const isFlyer = (type) => FLYERS.includes(type);
 // What the smash does to each type: points when it breaks, 0 = too solid (jump it), 'reflect' = batted back.
@@ -234,7 +239,7 @@ export const RESPONSE = {
 };
 /** 'jump' | 'duck' | 'under' | 'smash' for one obstacle: low flyers are jumped, mid ones ducked, high ones run under. */
 export function respond(o) {
-  const r = RESPONSE[o.type];
+  const r = o.resp || RESPONSE[o.type]; // o.resp: an instance that differs from its type (a traffic jam must be smashed)
   if (r !== 'height') return r;
   const y = o.ty ?? o.y;
   return y > 2.5 ? 'under' : y > 1.5 ? 'duck' : 'jump';
@@ -307,6 +312,9 @@ export class Obstacles {
     this.warnings = []; // [{x, y}] incoming shells being aimed, for the HUD
     this.crystals = null; // set by the game: crystal patterns are laid out with the obstacles
     this.jump = { v: 19.6, g: 58 }; // the dragon's full jump, used to lay crystals along its arc
+    this.director = new Director(); // tempo phases and set pieces (Patterns.js)
+    this.onPiece = null; // set by the game: a set piece began spawning (for its banner)
+    this.rushT = 0;
     this.onFire = null;
     this.root = new THREE.Group();
     scene.add(this.root);
@@ -393,6 +401,21 @@ export class Obstacles {
     this.pendingShooter = false;
     this.spawning = true;
     this.warnings.length = 0;
+    this.director.reset(hash32(this.seed, 0xd1ec));
+    this.rushT = 0;
+  }
+
+  /**
+   * Crystal Rush: for t seconds nothing spawns, and a river of crystals is laid at once from just ahead of
+   * the monster, as long as the rush minus a clear run-in, so it is on screen with the banner in either view.
+   */
+  startRush(t, speed) {
+    this.rushT = t;
+    this.firstSpawnX = null; // the first obstacle after it comes in from the far end, behind the last crystal
+    this.director.queue.length = 0;
+    const x0 = 12; // time to land if the rush starts mid-jump
+    const len = Math.min(SPAWN_X - x0, Math.max(11, speed) * (t - RUSH_TAIL));
+    for (let k = 0, x = x0; x < x0 + len; k++, x += RUSH_STEP) this.crystals?.add(x, 1.0 + 0.22 * Math.sin(k * 0.45));
   }
 
   /** How an obstacle must be answered: 'jump' | 'duck' | 'under' | 'smash' (also used by the autopilot). */
@@ -423,6 +446,8 @@ export class Obstacles {
     o.lateDuck = false; // the monster ducked under it at the last moment (an honest close call)
     o.z0 = 0; // 3D only: where it comes in from the side before locking onto the track
     o.vm = 0;
+    o.resp = null; // answer override for this instance (see respond)
+    o.jam = 0; // cars in a traffic jam
     o.smash = SMASH[type];
     o.tall = !!TALL[type];
     o.t = this.rand() * 10;
@@ -502,16 +527,33 @@ export class Obstacles {
     return o;
   }
 
-  _spawnCar() {
+  /** A car, or with jam = 2..3 a pile-up of that many cars, too long to jump: one smash takes the lot. */
+  _spawnCar(jam = 0) {
     const o = this._acquire('car');
     if (!o.model) {
       o.model = this.city.makeCar(this.rand);
       o.group.add(o.model);
     } else this.city.restyleCar(o.model, this.rand);
+    const extra = (o.jamCars ||= []);
+    const n = Math.max(1, jam);
     o.boxes.length = 0;
-    o.boxes.push([-1.1, 0, 1.1, 1.15]);
-    o.width = 2.2;
+    for (let i = 0; i < 3; i++) {
+      const m = i === 0 ? o.model : extra[i - 1] || (extra[i - 1] = o.group.add(this.city.makeCar(this.rand)).children.at(-1));
+      m.visible = i < n;
+      if (i >= n) continue;
+      if (i > 0) this.city.restyleCar(m, this.rand);
+      const x = (i - (n - 1) / 2) * JAM_PITCH;
+      m.position.x = x;
+      m.rotation.y = n > 1 ? (this.rand() - 0.5) * 0.3 : 0; // nose to tail at odd angles
+      o.boxes.push([x - 1.1, 0, x + 1.1, 1.15]);
+    }
+    o.width = 2.2 + (n - 1) * JAM_PITCH;
     o.vx = 0;
+    if (jam) {
+      o.jam = n;
+      o.resp = 'smash';
+      o.smash = Math.round(SMASH.car * 1.5); // one bite, a little more than one car
+    }
     return o;
   }
 
@@ -797,8 +839,13 @@ export class Obstacles {
         this.wrecks.splice(i, 1);
       }
     }
-    // spawn: measure the free run-in from the furthest obstacle (projectiles don't count)
     if (!this.spawning) return;
+    if (this.rushT > 0) {
+      this.rushT -= dt; // Crystal Rush: nothing spawns (see startRush)
+      return;
+    }
+    this.director.update(dt);
+    // spawn: measure the free run-in from the furthest obstacle (projectiles don't count)
     let edge = -Infinity;
     for (const o of this.active) if (!o.projectile) edge = Math.max(edge, o.x + o.width / 2);
     const freeSpace = SPAWN_X - edge;
@@ -834,17 +881,25 @@ export class Obstacles {
   _spawnNext(speed, dist, hard, freeSpace) {
     // this spawn's own stream (a held-back shooter retries with the same one)
     this.rand = mulberry32(hash32(this.seed ?? 2024, this.spawnIdx));
+    const dir = this.director;
     let type;
+    let item = null; // a set-piece item
+    let piece = null; // the set piece that starts with this spawn
     if (this.pendingShooter) type = 'tank';
     else {
-      type = this._pickType(dist, hard);
-      if (type === this.lastType && this.repeat >= 2) {
-        type = TABLES[this.stage] ? this._pickType(dist, hard, type) : type === 'cactusS' ? 'cactusL' : 'cactusS';
+      piece = dir.start(this.stage, speed, this.cycle, this.rand);
+      item = dir.queue.shift() || null;
+      if (item) type = item.type;
+      else {
+        type = this._pickType(dist, hard);
+        if (type === this.lastType && this.repeat >= 2) {
+          type = TABLES[this.stage] ? this._pickType(dist, hard, type) : type === 'cactusS' ? 'cactusL' : 'cactusS';
+        }
       }
     }
 
     let shooter = false;
-    if (type === 'tank') {
+    if (type === 'tank' && !item) { // set-piece tanks never fire: the convoy itself is the threat
       shooter = this.pendingShooter || this.rand() < Math.min(0.8, 0.45 + 0.1 * (this.cycle + this.levelTight));
       // A shooting tank needs the track between it and the dragon clear by the time it fires, so the
       // shell is the only thing to react to. Hold the spawn back until there is that much room.
@@ -866,7 +921,7 @@ export class Obstacles {
     else if (type === 'rock') o = this._spawnRock();
     else if (type === 'tower' || type === 'fuel' || type === 'hedgehog') o = this._spawnStructure(type);
     else if (type === 'building') o = this._spawnBuilding();
-    else if (type === 'car') o = this._spawnCar();
+    else if (type === 'car') o = this._spawnCar(item?.jam ? (speed >= 18 ? 3 : 2) : 0);
     else if (type === 'lava') o = this._spawnLava();
     else if (type === 'meteor') o = this._spawnMeteor();
     else if (type === 'pillar') o = this._spawnPillar();
@@ -874,15 +929,17 @@ export class Obstacles {
     else if (type === 'jeep') o = this._spawnJeep(speed);
     else {
       const maxCount = speed < 13 ? 1 : speed < 17 ? 2 : 3;
-      o = this._spawnCactus(type, 1 + Math.floor(this.rand() * maxCount));
+      o = this._spawnCactus(type, item?.n ? Math.min(item.n, maxCount) : 1 + Math.floor(this.rand() * maxCount));
     }
+    if (piece) this.onPiece?.(piece, o);
     const flyer = type === 'ptero' || type === 'heli';
     if (!flyer) o.y = 0;
     o.x = (this.firstSpawnX ?? SPAWN_X) + o.width / 2;
     this.firstSpawnX = null;
     // 3D: traffic, tanks and flyers can come in from the side; they lock onto the track by x = 50, long
     // before they matter, and 2D never sees the offset. Anything that will fire stays on the track.
-    if (!o.shooter && (type === 'car' || type === 'tank' || type === 'heli' || type === 'ptero' || type === 'jeep') && this.rand() < 0.55) {
+    // (set pieces come straight down the track, so they read as one sequence)
+    if (!item && !o.shooter && (type === 'car' || type === 'tank' || type === 'heli' || type === 'ptero' || type === 'jeep') && this.rand() < 0.55) {
       o.z0 = (this.rand() < 0.5 ? -1 : 1) * (type === 'car' || type === 'jeep' ? 10 : type === 'tank' ? 14 : 18);
     }
     // Flyers and chargers move faster than the ground scrolls and would eat into the gap behind the
@@ -899,15 +956,35 @@ export class Obstacles {
     const air = (0.72 - 0.16 * hard) * speed;
     const minGap = (air + 3.5 - 1.5 * hard + speed * 0.15) * tight + o.width;
     const maxGap = minGap * (1.55 - 0.35 * hard) + 6 - 3 * hard;
-    this.nextGap = minGap + this.rand() * (maxGap - minGap);
+    // The director places the gap inside [minGap, maxGap]: tight in a peak, roomier while warming up,
+    // minGap × gapK (>= 1) inside a set piece, and one long gap with a crystal line in a breather.
+    let long = false;
+    if (dir.queue.length) this.nextGap = minGap * dir.gapK;
+    else if (dir.breathe && !item) {
+      dir.breathe = false;
+      long = true;
+      this.nextGap = Math.max(maxGap, minGap * BREATHER_GAP);
+    } else {
+      const [a, b] = GAP[dir.phase];
+      this.nextGap = minGap + (a + this.rand() * (b - a)) * (maxGap - minGap);
+    }
     // crystal arcs ride with the ground; a charger would outrun its own and break the combo, so it gets none
-    if (!flyer && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed);
+    if (!flyer && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed, long);
   }
 
   /** Lays one crystal pattern on or after a ground obstacle, shaped by the dragon's real jump. */
-  _layCrystals(o, speed) {
+  _layCrystals(o, speed, long = false) {
     const cr = this.crystals;
     if (!cr) return;
+    if (long && !o.tall && !o.resp) {
+      // breather: a long ground line through the gap (start/end as below)
+      const half = (this.jump.v / this.jump.g) * speed;
+      const start = o.x + o.width / 2 + half + 1.2;
+      const end = o.x + o.width / 2 + this.nextGap - half * 0.9 - 1.5;
+      const n = Math.min(9, Math.floor((end - start) / 2.2) + 1);
+      for (let k = 0; k < n; k++) cr.add(start + k * 2.2, 1.0);
+      return;
+    }
     const { v, g } = this.jump;
     const apex = (v * v) / (2 * g);
     const half = (v / g) * speed; // horizontal distance from take-off to apex
@@ -916,7 +993,7 @@ export class Obstacles {
     const r = this.rand();
     const start = o.x + o.width / 2 + half + 1.2; // past the landing of a jump over o
     const end = o.x + o.width / 2 + this.nextGap - half * 0.9 - 1.5; // before the take-off for the next one
-    if (o.tall) {
+    if (o.tall || o.resp === 'smash') {
       // nothing to jump here: a line just past it, to grab right after the smash
       if (r < 0.5 && end - (o.x + o.width / 2 + 2) > 3) {
         for (let k = 0; k < 4; k++) cr.add(o.x + o.width / 2 + 2 + k * 1.5, 1.0);

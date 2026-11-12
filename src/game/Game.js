@@ -22,6 +22,7 @@ import { Volcano } from '../world/Volcano.js';
 import { Debris } from '../world/Debris.js';
 import { Blasts } from '../world/Blasts.js';
 import { SupplyDrops, POWERUPS } from './SupplyDrops.js';
+import { CRESCENDO } from './Patterns.js';
 import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
@@ -78,6 +79,7 @@ export const CFG = {
   glideGravity: 0.3, // share of gravity while gliding
   glideFall: 6.5, // fastest fall while gliding (units/s)
   loopSpeed: 0.1, // every completed stage loop raises the speed cap by this much (up to 4 loops)
+  rushTime: 4, // seconds of Crystal Rush (a river of crystals, nothing to dodge) after each gunship
   bossEvery: 14000, // after the first gunship, the next comes once you've scored this many more points (was 7000: too often)
 };
 
@@ -436,6 +438,7 @@ export class Game {
     this.volcano = new Volcano(scene, tex);
     this.obstacles.volcano = this.volcano;
     this.obstacles.onMeteor = (o) => this._meteorImpact(o);
+    this.obstacles.onPiece = (p) => this._onPiece(p);
     this.debris = new Debris(scene, tex);
     this.blasts = new Blasts(scene, this.tex.noise);
     this.supply = new SupplyDrops(scene);
@@ -1005,7 +1008,7 @@ export class Game {
     this.score += pts;
     this._setChain(this.chain + (perfect ? 2 : 1));
     this._addRage(CFG.smashRage / this.level.rageCrystals);
-    const label = perfect ? 'PERFECT' : sky ? 'SKY BITE' : this.streak >= 3 ? 'TRIPLE SMASH' : this.streak === 2 ? 'DOUBLE SMASH' : 'SMASH';
+    const label = o.jam > 1 ? `TRAFFIC JAM ×${o.jam}` : perfect ? 'PERFECT' : sky ? 'SKY BITE' : this.streak >= 3 ? 'TRIPLE SMASH' : this.streak === 2 ? 'DOUBLE SMASH' : 'SMASH';
     this._popup(`${label} +${pts}`, o.x, o.y + (o.tall ? 4.2 : 2.2), perfect || sky || this.streak >= 2 ? 'close' : 'kill');
     if (perfect) this.perfects++;
     this.hitStopT = perfect ? CFG.hitStop * 1.8 : CFG.hitStop;
@@ -1488,8 +1491,28 @@ export class Game {
     o.cycle = this.stages.cycle;
     o.spawning = true;
     o.nextGap = 30;
-    o.firstSpawnX = 70;
-    this._enterStage(st, 1.2);
+    // a victory lap: a river of crystals and nothing to dodge, then the next stage
+    o.startRush(CFG.rushTime, this.speed);
+    this.hud.banner(`${CFG.rushTime} SECONDS`, 'CRYSTAL RUSH', 'clear');
+    this._enterStage(st, CFG.rushTime + 0.4);
+  }
+
+  /** A set piece starts spawning: name it, unless a banner is already up. */
+  _onPiece(p) {
+    if (p.id === 'jam') this._tip('jam', this.coarseMQ.matches ? 'Traffic jam! Too long to jump: tap the claw to SMASH the lot.' : 'Traffic jam! Too long to jump: SMASH (→) the lot in one bite.');
+    if (this.hud.bannerBusy() || this.pendingBanner) return;
+    this.hud.banner('SET PIECE', p.title, 'piece');
+  }
+
+  /** Seconds until the next gunship stage at the current pace (Infinity if none is due). */
+  _secsToBoss() {
+    const st = this.stages;
+    if (st.current.boss) return Infinity;
+    const rate = Math.max(1, this.speed * CFG.scoreRate);
+    let s = Infinity;
+    if (this.bossesSeen === 0 && st.list[st.index + 1]?.boss) s = (st.current.length[st.cycle ? 1 : 0] - (this.dist - st.start)) / rate;
+    if (Number.isFinite(this.nextBossScore)) s = Math.min(s, (this.nextBossScore - this.score) / (rate * Math.max(1, this.mult) * this.scoreK));
+    return s;
   }
 
   // ------------------------------------------------------------------ main loop
@@ -1628,6 +1651,7 @@ export class Game {
         this.obstacles.cycle = Math.max(this.obstacles.cycle, this.stages.cycle); // every loop is tighter and busier
         this._enterStage(next);
       }
+      this.obstacles.director.crescendo = this._secsToBoss() < CRESCENDO; // the run into a gunship is a peak
       this.obstacles.update(dt, this.speed, this.dist, hard);
       this._updateReflected();
       this._checkTips();
