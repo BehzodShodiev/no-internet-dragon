@@ -1,4 +1,4 @@
-// Mothra: a procedural giant moth, the first flying monster. It has the same interface as Dragon (group,
+// the Moth Queen: a procedural giant moth, the first flying monster. It has the same interface as Dragon (group,
 // update, getHitboxes, getMouthWorld, getSideMouths, setGlow, setRage, setSkin, glowColor, hitX, roar,
 // onFootstep), so Game drives both the same way.
 //
@@ -7,7 +7,7 @@
 // The body flies nose-up like a real moth: head high in front, abdomen trailing low behind, much like the
 // dragon's head and tail. She skims the ground on her middle and hind legs while the wings beat, so her
 // hitboxes keep the Kaiju's heights (running, ducking and airborne) and ground obstacles still need a jump.
-// Wings, antennae and the front legs are decoration, like Ghidorah's wings.
+// Wings, antennae and the front legs are decoration, like the Hydra's wings.
 import * as THREE from 'three';
 import { sweep, mergeGeometries } from '../gfx/geometry.js';
 import { heightToNormal } from '../gfx/textures.js';

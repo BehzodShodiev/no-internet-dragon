@@ -16,7 +16,7 @@ const list = (v, d) => (v ? String(v).split(',').map((x) => x.trim()).filter(Boo
 const quick = !!A.quick;
 const levels = list(A.levels, ['1', '2', '3']).map(Number);
 const views = list(A.views, ['2d', '3d']);
-const monsters = list(A.monsters, ['kaiju', 'ghidorah', 'mothra']);
+const monsters = list(A.monsters, ['kaiju', 'ghidorah', 'mothra', 'rex']);
 const seeds = list(A.seeds, quick ? ['101'] : ['101', '202']).map(Number);
 const loops = Number(A.loops || (quick ? 2 : 4));
 const sim = Number(A.sim || 10);

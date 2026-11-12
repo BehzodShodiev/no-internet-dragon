@@ -15,12 +15,13 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 | Skins | Owner request: the breath didn't follow the skin. The beam's wide white-hot core tone-mapped every breath to the same pale white, and the scorch trail and impact light used the plate colour. Now a saturated sheath in the skin's breath colour with a narrow hot core (`Particles.js` BreathBeam), beam light, scorch and impact light in the breath colour (`Game.breathColor`). Hide effects for skins (`Dragon.js`): `spot` (glowing scales), `sheen` (coloured rim), `irid` (oil-slick rim). Five new skins: Frost, Toxic, Abyss, Golden, Obsidian (12 in all); swatches show hide, plates and breath | **Done**, artifact v21 |
 | Owner fixes | Very Low graphics preset (`QUALITY.verylow`: 75% resolution, no shadows, bloom or FXAA, coarsest terrain, a fifth of the scenery; Auto can step down to it). Gunships half as often after the first (`CFG.bossEvery` 7000 → 14000 points; matrix 62 → 46 gunships, bot points per second −5.1%). Volcano pterodactyls were orange on orange (warm rim, lava-lit hide): flyers' rim colour and body shade are now per-world uniforms (`Obstacles.setBiome`), dark bodies with an icy rim in the volcano | **Done**, artifact v22 |
 | V3c-a | Set pieces (H, GP-09): a pacing director (`src/game/Patterns.js`: warm, wave, breather, peak; a crescendo in the 10 s before every gunship) and authored set pieces per stage, announced with a banner: cactus staircase (Desert), checkpoint and tank convoy (Army), traffic jam (2–3 cars, smash the lot in one bite) and block buster (City, Siege), meteor shower and lava hopscotch (Ashlands), fortress gate (Inferno). The first wave of every run opens with one. A 4 s Crystal Rush after each gunship. Results below | **Done** 2026-11-12, artifact v23 |
-| VH-1a | Owner request (2026-11-12): a **Very High** graphics preset where the monsters look far better ("they look like a 5 year old drew them"); other presets unchanged. Split: **VH-1a** detailed Kaiju model; **VH-1b** the preset and its wiring; **VH-2** Ghidorah; **VH-3** Mothra. Results in the notes below | **Done** 2026-11-12, artifact v24 |
+| VH-1a | Owner request (2026-11-12): a **Very High** graphics preset where the monsters look far better ("they look like a 5 year old drew them"); other presets unchanged. Split: **VH-1a** detailed Kaiju model; **VH-1b** the preset and its wiring; **VH-2** Hydra; **VH-3** Moth Queen. Results in the notes below | **Done** 2026-11-12, artifact v24 |
 | VH-1b | `QUALITY.veryhigh` (1.5× supersampling up to 3×, capped at 9 MP but never below High; 4096 shadows, clamped to the GPU, reaching 70 units in 3D; 640-segment terrain; 16× anisotropy; `models: 'hd'`; manual only, Auto never picks it), Game wiring, perf scenes | **Done** 2026-11-12, artifact v24 |
-| VH-2 | Detailed King Ghidorah (shares the Kaiju's body and head builders; necks, wings and the split tail need their own pass) | Next |
-| VH-3 | Detailed Mothra (`src/entities/Moth.js`: fur, wing detail, eyes, legs) | |
+| VH-2 | Detailed Golden Hydra (shares the Kaiju's body and head builders; necks, wings and the split tail need their own pass) | Next |
+| VH-3 | Detailed Moth Queen (`src/entities/Moth.js`: fur, wing detail, eyes, legs) | |
+| Rex + names | Owner request (2026-11-12): add a dinosaur (not Chrome's: Google's character, so an original one) and "get out of legal problems". **Rex** (`variant: 'rex'`, unlocked by smashing 100 things): big head, tiny arms, no plates, olive with tiger stripes; two skins, **Classic** (smooth) and **Pixel** (the same model voxelised by `src/entities/Voxel.js`, shown by `setSkin`). Skins are now per monster (`m.skins` is a list; the Rex's choice is stored as `dragon.skin.rex`). Player-facing names without film-franchise names: King Ghidorah → **Golden Hydra**, Mothra → **Moth Queen**, skins Showa → Retro, Millennium → Jungle, Evolved → Neon, Shin → Rust, Mecha → Steel; page description and README no longer name Chrome or Godzilla; planned monsters renamed in the docs (Storm Wing, Hook Raptor, Crab Demon, Crystal Titan). Ids stay (stored in players' progress and leaderboard rows) | **Done** 2026-11-12, artifact v25 |
 | V3c-b | Artillery on marked spots (shellDrop on the meteor flow), gunner helicopters, a Desert sandstorm moment, an oasis | After VH-3 (the owner put Very High first) |
-| V4 | Monster abilities and Rodan (G) | |
+| V4 | Monster abilities and Storm Wing (G) | |
 | V5 | Bosses (I): gunship phase 2, Mecha-Kaiju in Night City | |
 | V6 | Menus and moments (F): game over v2 with a score breakdown, the unlock reveal, pause menu and settings, Bootcamp | |
 | V7 | Meta and modes (J), roster 4–5 and balance (K), new worlds (L), the rest of E2 | |
@@ -33,24 +34,24 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 | D | Game feel and fair score economy: jump buffer, Rage on demand, combo fairness, smash mastery, loops add threats, camera and juice | **Done** 2026-11-06, artifact v15 |
 | E | Looks I: grading, atmosphere, local lights, shadows, VFX and destruction | **E1 done** 2026-11-06, artifact v16 · E2 next (list below) |
 | F | Menus, UX and onboarding: transitions, settings and pause menu, game over v2, unlock reveal, Bootcamp, accessibility | Not started |
-| G | Signature abilities, Rodan (roster part 3), monster fidelity | Not started |
+| G | Signature abilities, Storm Wing (roster part 3), monster fidelity | Not started |
 | H | Living levels: patterns and set pieces, new obstacle behaviours, power-ups, world detail | Not started |
 | I | Bosses: Gunship 2.0, boss framework, Mecha-Kaiju | Not started |
 | J | Meta and modes: achievements, missions, mastery looks, Daily, World Tour, Boss Rush | Not started |
-| K | Roster parts 4–5 (Gigan, Destoroyah, SpaceGodzilla) and the balance pass | Not started |
+| K | Roster parts 4–5 (Hook Raptor, Crab Demon, Crystal Titan) and the balance pass | Not started |
 | L | New worlds (Monster Island, Tokyo Bay) and the film-roster pipeline | Not started |
 
 ### Results of part A
 
 - Fixes: Night City keeps its road, lamps and skyline for the whole level (it rolled away at stage 2); leaderboard writes never replace a row unless a successful read showed none, and progress is only written after the row was read (`Leaderboard._write`); progress saves on tab hide/close and merges with other tabs (`Progress.save`); goals met in a run that never ended unlock on the next load; tips are remembered; window blur pauses; Space/Enter press keyboard-focused buttons in menus; touch buttons capture the pointer; a Main menu button on game over; the in-run HUD hides on menus; the dist service worker precaches every hashed asset under a versioned cache.
 - Seeded runs: `?seed=N` (run k uses N + k); every spawn draws from its own stream `hash32(seed, spawnIndex)`, boss volleys from `hash32(seed, 1000 + boss)`; `Obstacles.RESPONSE` / `respond(o)` say how each type is beaten (tips and bot use it); `_prewarm` is keyed by type and warns about any pool type without a sample.
-- Gates (all pass): `npm run test:matrix` 36/36 (3 levels × 2D/3D × Kaiju, Ghidorah, Mothra × seeds 101 and 202, to loop 4, 0 deaths, about 6 min with 3 workers); `npm run test:hitbox` (Ghidorah within 0.001, Mothra within 0.034 of the Kaiju); `npm run test:data` (12 checks: blocked reads, retries, new rows, read-only viewers, old local saves).
+- Gates (all pass): `npm run test:matrix` 36/36 (3 levels × 2D/3D × Kaiju, Hydra, Moth Queen × seeds 101 and 202, to loop 4, 0 deaths, about 6 min with 3 workers); `npm run test:hitbox` (Hydra within 0.001, Moth Queen within 0.034 of the Kaiju); `npm run test:data` (12 checks: blocked reads, retries, new rows, read-only viewers, old local saves).
 - Perf baseline (`docs/perf/baseline-partA.json`, headless Chrome on this laptop's iGPU, `?perf`): GPU time per frame Desert noon 3D 6.06 ms (97 draws, **3.73M triangles**), City Siege 3D 4.4 ms (1.13M), Volcano gunship 3D 4.34 ms (1.12M), Desert night 2D 4.38 ms (1.75M), phone Medium 5.0 ms (2.76M). One frame over 50 ms in the Desert and City scenes. Load to title 4.0 s: shader compile 2.3 s, procedural textures about 0.9 s. Headless frames are paced at about 6.9 ms (144 Hz), so GPU time and long frames are the numbers to beat in part C.
 
 ### Results of part B
 
 - `src/game/Music.js`: an original procedural score on a 16th-note look-ahead sequencer. Themes for the title, Desert (Phrygian dominant), Night City (minor synth), Volcano (heavy Phrygian) and game over; six layers (pad, bass, drums, arpeggio, brass, lead) follow intensity (title 0, running 1, army/siege/inferno 2, gunship 3, Rage 4, set in `Game._scoreMusic`); stingers for game over, new best, gunship down and unlocks. The old Rage/boss drum loop is gone (the score has its own drums).
-- `src/game/Audio.js`: SFX, music, UI and ambience buses into a glue compressor, a limiter and a soft clipper; a reverb send with a generated impulse per biome; music ducks under roars and explosions; a live-voice count lets optional notes skip when the mix is crowded. Ambience per biome (desert wind, city hum and traffic, volcanic rumble and lava crackle). Per-monster sound (`Monsters.js` `sound`): Kaiju growl and atomic beam, Ghidorah triple roar and gravity beams, Mothra trill and scale storm; the death cry uses the monster's voice. New: pterodactyl screech, meteor whistle, missile launch (panned), glass for buildings, tank treads, UI hover/click/open/close. A paused game or hidden tab suspends the sound.
+- `src/game/Audio.js`: SFX, music, UI and ambience buses into a glue compressor, a limiter and a soft clipper; a reverb send with a generated impulse per biome; music ducks under roars and explosions; a live-voice count lets optional notes skip when the mix is crowded. Ambience per biome (desert wind, city hum and traffic, volcanic rumble and lava crackle). Per-monster sound (`Monsters.js` `sound`): Kaiju growl and atomic beam, Hydra triple roar and gravity beams, Moth Queen trill and scale storm; the death cry uses the monster's voice. New: pterodactyl screech, meteor whistle, missile launch (panned), glass for buildings, tank treads, UI hover/click/open/close. A paused game or hidden tab suspends the sound.
 - Gates: `npm run test:audio` (new) renders the mix offline: every theme and intensity is audible (title −27 dB RMS, runs −24 to −20 dB, game over −24 dB) and the worst case (every big sound at once over Rage music) peaks at 0.87, no clipping. Quick matrix 18/18 at 0 deaths; the scheduler costs about 0.08 ms per 25 ms tick. Test servers no longer hot-reload (an edit mid-run had swapped monsters under the matrix), and the matrix now fails any run whose monster, level or seed changed underneath it.
 
 ### Results of part C
@@ -60,7 +61,7 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Auto quality v2 (`Renderer.adapt`): times the GPU (timer query) and only steps down when the GPU is the bottleneck; learns the display cadence (no drops on 30 fps caps or 50 Hz screens); preset changes go through `Game._autoPreset` at game over or the title, never mid-run; the shadow filter is fixed per session (no mid-run recompiles); climbs back up with headroom.
 - CPU: obstacles keep and restyle their child meshes (cactus, rock, building, car); `Environment.update`, `skyColor`, `twilightSky` and `Game._update` allocate nothing per frame (scratch objects for the boss context, monster state, crystal options, warnings, projections, camera options); HUD meters and warnings only write on change; tips stop scanning once learned.
 - Idle: paused draws once, title and game over redraw about 30 times a second; in-run buttons and the toast skip `backdrop-filter`.
-- Loading: post-processing shaders compile with the scene during loading (the first frame now builds 5 programs, the shadow-depth variants three keeps internal, instead of all post shaders); the other monsters are built and compiled in the background on the title (picking Mothra went from about 0.68 s to under 10 ms); procedural textures are cached in IndexedDB (`TexCache`, keyed to the generator source); the font ships as woff2 only. Production load to title: 3.7 s on a first visit, 1.2–1.4 s on repeat visits (`npm run test:load`).
+- Loading: post-processing shaders compile with the scene during loading (the first frame now builds 5 programs, the shadow-depth variants three keeps internal, instead of all post shaders); the other monsters are built and compiled in the background on the title (picking Moth Queen went from about 0.68 s to under 10 ms); procedural textures are cached in IndexedDB (`TexCache`, keyed to the generator source); the font ships as woff2 only. Production load to title: 3.7 s on a first visit, 1.2–1.4 s on repeat visits (`npm run test:load`).
 - Results (`docs/perf/partC.json` vs part A): GPU time per frame Desert 3D 6.06 → 2.81 ms, City Siege 4.4 → 2.83 ms, Volcano gunship with Rage and breath 4.34 → 3.85 ms, Desert night 2D 4.38 → 2.84 ms, phone Medium 5.0 → 2.6 ms; no frames over 50 ms in any scene. `npm test` passes (matrix 36/36).
 - Deferred: merging the pterodactyl's 11 meshes moves to part E (its look is reworked there); the first visit's shader compile (about 1.8 s) remains the largest loading cost.
 - Test fixes: the matrix now injects the bot before the run starts (a late injection on a busy machine let the fast simulation reach the first obstacle unattended), and `?perf` ignores frames in the 0.5 s after a reset (the DevTools call that resets can stall a frame).
@@ -72,7 +73,7 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Smash mastery: PERFECT when the target was within 1.2 units of the jaws at the press (stamped as `o.smashLead` in `_smash`), DOUBLE/TRIPLE SMASH within 1.5 s, SKY BITE on flyers in mid-air, bonuses capped at 2×; each smash adds 0.6 crystals' worth of Rage. Duck close calls only count when the duck started within 0.25 s of the threat (`_markLateDucks`, `o.lateDuck`).
 - Loops: `obstacles.cycle` now follows `stages.cycle` at every stage change (tightening and armed tanks no longer wait for a gunship kill); spawn-table rows take a "from loop" value (`TABLES` in `Obstacles.js`), and the Desert brings helicopters from loop 2 and tanks from loop 3; new loops are announced (LOOP n). In 3D, some cars, tanks and flyers swing in from the side (`o.z0`), locked onto the track by x = 50 (2D never sees it; collisions ignore z).
 - Camera and juice (`CameraRig`): smooth-noise shake with roll, speed-based FOV, a zoom punch on smashes, a death cam, gunship framing; haptics on phones; everything honours `dragon.motion` (default: the system's reduced-motion setting), which also tones flashes down.
-- Gates: matrix 36/36 at 0 deaths; data, audio and hitbox pass. Score impact on identical seeds (bot points per game second, part C → D): Kaiju 142.2 → 142.2, Ghidorah 163.0 → 165.9 (+2%), Mothra 86.9 → 72.7 (−16%, the bot no longer gets Rage automatically), all −3%. Within the +10% guard, so existing leaderboard scores stay comparable (human players who smash and burn more will score somewhat more).
+- Gates: matrix 36/36 at 0 deaths; data, audio and hitbox pass. Score impact on identical seeds (bot points per game second, part C → D): Kaiju 142.2 → 142.2, Hydra 163.0 → 165.9 (+2%), Moth Queen 86.9 → 72.7 (−16%, the bot no longer gets Rage automatically), all −3%. Within the +10% guard, so existing leaderboard scores stay comparable (human players who smash and burn more will score somewhat more).
 
 ### Results of part E1
 
@@ -90,12 +91,12 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 - Traffic jam: `Obstacles._spawnCar(jam)` puts 2 cars (3 from speed 18) nose to tail in one obstacle (`o.jam`, `o.resp = 'smash'` read by `respond()`, so the bot and tips follow it), worth 1.5 cars; `_smashHit` pops TRAFFIC JAM ×n; a one-time tip. Crystals never arc over it (a line after it instead, like tall obstacles).
 - Crystal Rush: `_afterBoss` calls `Obstacles.startRush(CFG.rushTime = 4, speed)`, which lays a river (one crystal every 3.5 units from x = 12, as long as the rush minus 1.2 s) at once, so it is on screen with the banner in 2D, and spawns nothing until it ends; the next stage banner waits for it.
 - Banners: `HUD.bannerBusy()`; a set piece is announced (smaller `piece` style, dark outline for the bright desert sky) only when no other banner is up.
-- Score impact on identical seeds (bot points per game second, v22 → v23, full matrix): all +7.4% (Kaiju +4.4%, Ghidorah +5.8%, Mothra +16.7%: ground crystal lines suit a glider; Desert +8.2%, City +10.3%, Volcano +3.8%; 2D +3.1%, 3D +13.1%). Within the +10% guard overall; the City sits at the line (three tuning runs measured +9.0, +19.3 and +10.3, so single matrices vary by several points). First try was +19%: the rush river, breather lines, jam points and tighter peaks were all cut back.
+- Score impact on identical seeds (bot points per game second, v22 → v23, full matrix): all +7.4% (Kaiju +4.4%, Hydra +5.8%, Moth Queen +16.7%: ground crystal lines suit a glider; Desert +8.2%, City +10.3%, Volcano +3.8%; 2D +3.1%, 3D +13.1%). Within the +10% guard overall; the City sits at the line (three tuning runs measured +9.0, +19.3 and +10.3, so single matrices vary by several points). First try was +19%: the rush river, breather lines, jam points and tighter peaks were all cut back.
 - Gates: matrix 36/36 at 0 deaths (to loop 4); data, audio and hitbox pass; artifact 258 KB gzip. Perf not re-measured (no rendering change; set pieces only reorder spawns).
 
 ### Very High results (VH-1, 2026-11-12)
 
-- The detailed Kaiju: `src/entities/DragonHD.js` (curved teeth and claws, seeded bone plates, noise) and `Dragon._buildMeshesHD` / `_buildPlatesHD` (muscle masses, keel, banded belly, throat folds, muscled legs, heavy toes with dewclaws, arms with four-fingered hands, a carved skull with brow horns over sunken sockets, lidded slit-pupil eyes, nostrils, 12 curved teeth a side, a tongue, mottled colours, 20 + 22 + 5 plates). `new Dragon(tex, 'kaiju', 'hd')`; Ghidorah and Mothra keep their models on Very High until VH-2 and VH-3.
+- The detailed Kaiju: `src/entities/DragonHD.js` (curved teeth and claws, seeded bone plates, noise) and `Dragon._buildMeshesHD` / `_buildPlatesHD` (muscle masses, keel, banded belly, throat folds, muscled legs, heavy toes with dewclaws, arms with four-fingered hands, a carved skull with brow horns over sunken sockets, lidded slit-pupil eyes, nostrils, 12 curved teeth a side, a tongue, mottled colours, 20 + 22 + 5 plates). `new Dragon(tex, 'kaiju', 'hd')`; Hydra and Moth Queen keep their models on Very High until VH-2 and VH-3.
 - Plates are a grid of two curved faces meeting at a thin edge (`plateGeometry`), not an extrusion: an extruded plate has no inner vertices, so its ridges crumpled the faces into "ice cubes" on the first try. Colour runs from a dark root to pale bone by `uv.y`, which also drives the glow gradient.
 - HD material: `defines.HD` adds a second, finer normal layer and a soft rim; `darkMat` for pupils and nostrils; vertex-coloured teeth and claws. All 12 skins checked (Classic, Burning, Mecha, Golden in close-ups).
 - Wiring: `Game._applyQualityContent` sets the shadow reach (`Environment.shadowReach`), anisotropy on the textures made at 8×, and `wantModels`; `_applyModels` rebuilds the Kaiju between runs only (a change mid-run applies when it ends) and compiles in the background (`_compileScene`). The old model is disposed only after pending compiles settle: disposing during `compileAsync` threw in three's `checkMaterialsReady` and would have stalled the monster prebuild.
@@ -107,9 +108,9 @@ Two tracks, worked in order: the **100x program** (the owner's request to make t
 
 ## Monster roster
 
-Started 2026-11-05: more playable monsters (Mothra, King Ghidorah, "and other ones"), all **locked** and earned through play.
+Started 2026-11-05: more playable monsters (Moth Queen, Golden Hydra, "and other ones"), all **locked** and earned through play.
 
-- Every player starts with the **Kaiju** (the Godzilla-style dragon, with its seven colour skins). Other monsters are locked.
+- Every player starts with the **Kaiju** (the atomic-lizard dragon, with its seven colour skins). Other monsters are locked.
 - Lifetime stats are kept per player (`src/game/Progress.js`, browser storage, mirrored into the player's leaderboard row as `progress` (stats and unlocks) when they can write to it).
 - Unlocks are checked at the end of every run (and on load); a new one gets a banner on the game-over screen.
 - The **Monsters** panel (title and game-over screens, key `B`) lists each monster with its unlock goal and progress bar. The artifact's owner can preview locked monsters there.
@@ -117,26 +118,26 @@ Started 2026-11-05: more playable monsters (Mothra, King Ghidorah, "and other on
 
 | Roster part | Content | Unlock goal | Status |
 | --- | --- | --- | --- |
-| 1 | Unlock system, lifetime stats, Monsters panel, **King Ghidorah** | Down 5 gunships in total | **Done** 2026-11-05, artifact v10 |
-| 2 | **Mothra** (flying model, glide, wing-dust beam) | Collect 500 crystals in total | **Done** 2026-11-05, artifact v11 |
-| 3 | **Rodan**: now program part G | Down your first gunship | Not started |
-| 4 | **Gigan** and **Destoroyah**: now program part K | Gigan: smash 200 things. Destoroyah: score 15,000 in one Night City run | Not started |
-| 5 | **SpaceGodzilla** and the balance pass: now program part K | Trigger Kaiju Rage 10 times | Not started |
+| 1 | Unlock system, lifetime stats, Monsters panel, **Golden Hydra** | Down 5 gunships in total | **Done** 2026-11-05, artifact v10 |
+| 2 | **Moth Queen** (flying model, glide, wing-dust beam) | Collect 500 crystals in total | **Done** 2026-11-05, artifact v11 |
+| 3 | **Storm Wing**: now program part G | Down your first gunship | Not started |
+| 4 | **Hook Raptor** and **Crab Demon**: now program part K | Hook Raptor: smash 200 things. Crab Demon: score 15,000 in one Night City run | Not started |
+| 5 | **Crystal Titan** and the balance pass: now program part K | Trigger Kaiju Rage 10 times | Not started |
 | Later | Anguirus, Battra, King Caesar, Jet Jaguar, then Baragon, Megalon, Hedorah, Biollante…: program part L | One achievement each | Not started |
 
 ### Notes from roster part 1
 
 - `Dragon` takes a variant (`'kaiju'` | `'ghidorah'`); the head builder is `makeHead()` inside `_buildMeshes`, reusable for extra heads. Rigid add-ons (side heads, wings) are plain meshes parented to bones; skinned add-ons (the extra tail) go through `spineSkin`.
 - Monsters other than the Kaiju are built the first time they're selected (`Game.selectMonster`), so they don't slow loading.
-- Stats counted: `runs, crystals, gunships, smashes, rages, closeCalls, bestScore` (`Progress.js`). Destoroyah's goal needs a per-level best; `bestScore` is any level, so add a stat for it then.
+- Stats counted: `runs, crystals, gunships, smashes, rages, closeCalls, bestScore` (`Progress.js`). Crab Demon's goal needs a per-level best; `bestScore` is any level, so add a stat for it then.
 - Owner preview relies on the `user` capability's `isOwner()`.
 
 ### Notes from roster part 2
 
-- Mothra is `src/entities/Moth.js`, a standalone model (no skinning) with the dragon's interface plus `flyer: true`, `onWingbeat(k)` and `wingDust(target)`. It is built in world units under a `root` that cancels `DRAGON_SCALE`. Wings are fan meshes (`wingPoint(def, u, v)`) with textures painted in the same (u, v) space; legs are instanced femur/tibia pairs placed by 2-bone IK.
+- Moth Queen is `src/entities/Moth.js`, a standalone model (no skinning) with the dragon's interface plus `flyer: true`, `onWingbeat(k)` and `wingDust(target)`. It is built in world units under a `root` that cancels `DRAGON_SCALE`. Wings are fan meshes (`wingPoint(def, u, v)`) with textures painted in the same (u, v) space; legs are instanced femur/tibia pairs placed by 2-bone IK.
 - New monster fields (`Monsters.js`): `model` ('moth'), `glide`, `voice` (roar pitch), `look.score` (score factor when it differs from `hitX`).
-- The bot scores less with Mothra because gliding leaves the crystal arcs; revisit her ×0.9 in the balance pass.
-- For Rodan: Moth.js is the template; he needs membrane wings (Ghidorah's `_wingGeometry`), a beaked head and two bird legs.
+- The bot scores less with Moth Queen because gliding leaves the crystal arcs; revisit her ×0.9 in the balance pass.
+- For Storm Wing: Moth.js is the template; he needs membrane wings (Hydra's `_wingGeometry`), a beaked head and two bird legs.
 
 ## Resuming
 

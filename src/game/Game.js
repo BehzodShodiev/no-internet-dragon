@@ -75,7 +75,7 @@ export const CFG = {
   smashStreak: 1.5, // seconds between smashes that still count as a DOUBLE / TRIPLE SMASH
   smashRage: 0.6, // each smash fills Kaiju Rage like this share of a crystal
   lateDuck: 0.25, // a duck counts as a close call only if it started this close (seconds) to the threat
-  // gliding (Mothra): holding jump on the way down
+  // gliding (the Moth Queen): holding jump on the way down
   glideGravity: 0.3, // share of gravity while gliding
   glideFall: 6.5, // fastest fall while gliding (units/s)
   loopSpeed: 0.1, // every completed stage loop raises the speed cap by this much (up to 4 loops)
@@ -114,6 +114,12 @@ export class Game {
     this.monster = savedMonster && this.progress.isUnlocked(savedMonster) ? savedMonster : MONSTERS[0];
     this.preview = false; // the owner trying a locked monster
     this.skinIndex = Math.min(SKINS.length - 1, Math.max(0, SKINS.findIndex((k) => k.id === store.get('dragon.skin', 'classic'))));
+    // other monsters' chosen skins (the Kaiju's stays in skinIndex and 'dragon.skin', as before)
+    this.skinIdx = {};
+    for (const m of MONSTERS) {
+      if (!m.skins || m.id === 'kaiju') continue;
+      this.skinIdx[m.id] = Math.max(0, m.skins.findIndex((k) => k.id === store.get(`dragon.skin.${m.id}`, '')));
+    }
     this.skin = SKINS[this.skinIndex];
     this.scoreK = this.skin.hitX; // score factor of the current look (see _applyLook)
     this.gliding = false;
@@ -274,24 +280,38 @@ export class Game {
     return Math.round(base * this.mult * this.scoreK);
   }
 
-  /** The current monster's roar (Mothra's is a high cry). */
+  /** The current monster's roar (the Moth Queen's is a high cry). */
   _roar(duration, pitch = 1) {
     this.audio.roar(duration, pitch * (this.monster.voice ?? 1), this.monster.sound?.roar);
   }
 
-  /** Picks a skin (only between runs); the dragon on screen changes straight away. */
+  /**
+   * Picks a skin of the current monster (only between runs); the monster on screen changes straight away.
+   * A monster without skins switches to the Kaiju, as before.
+   */
   selectSkin(index) {
-    index = (index + SKINS.length) % SKINS.length;
-    this.skinIndex = index;
-    store.set('dragon.skin', SKINS[index].id);
+    const m = this.monster.skins ? this.monster : MONSTERS[0];
+    index = (index + m.skins.length) % m.skins.length;
+    if (m.id === 'kaiju') {
+      this.skinIndex = index;
+      store.set('dragon.skin', m.skins[index].id);
+    } else {
+      this.skinIdx[m.id] = index;
+      store.set(`dragon.skin.${m.id}`, m.skins[index].id);
+    }
+    if (m !== this.monster) { this.selectMonster(m.id); return; }
     this.hud.setSkin(index);
-    if (this.monster.id !== 'kaiju') this.selectMonster('kaiju'); // skins belong to the Kaiju
-    else this._applyLook();
+    this._applyLook();
   }
 
-  /** The current monster's colours, breath and build (the Kaiju's come from its chosen skin). */
+  /** The chosen skin index of a monster with skins. */
+  _skinIndexOf(m) {
+    return m.id === 'kaiju' ? this.skinIndex : this.skinIdx[m.id] || 0;
+  }
+
+  /** The current monster's colours, breath and build (from its chosen skin, if it has skins). */
   _applyLook() {
-    this.skin = this.monster.skins ? SKINS[this.skinIndex] : this.monster.look;
+    this.skin = this.monster.skins ? this.monster.skins[this._skinIndexOf(this.monster)] : this.monster.look;
     this.scoreK = this.skin.score ?? this.skin.hitX;
     this.dragon.setSkin(this.skin);
     this.beam.setColors(this.skin.beam);
@@ -314,7 +334,10 @@ export class Game {
     if (!this.preview) store.set('dragon.monster', m.id);
     this._applyLook();
     this.hud.setMonster(m, this.preview);
-    if (m.skins) this.hud.setSkin(this.skinIndex);
+    if (m.skins) {
+      if (this.hud.skins !== m.skins) this.hud.buildSkins(m.skins, this._onSkinPick);
+      this.hud.setSkin(this._skinIndexOf(m));
+    }
     this.hud.renderMonsters(this.progress, m.id, this.board.isOwner);
   }
 
@@ -459,7 +482,7 @@ export class Game {
     this.sparks = new Particles(900, tex.dot, { additive: true });
     scene.add(this.dust.points, this.sparks.points);
     this.beam = new BreathBeam();
-    // King Ghidorah breathes from all three heads: two extra beams (without their own lights)
+    // the Golden Hydra breathes from all three heads: two extra beams (without their own lights)
     this.sideBeams = [new BreathBeam(), new BreathBeam()];
     for (const b of this.sideBeams) scene.add(b.mesh);
     scene.add(this.beam.mesh, this.beam.light);
@@ -657,8 +680,11 @@ export class Game {
     inp.on('quality', () => this._cycleQuality());
     inp.on('monsters', () => this.toggleMonsters());
     this.hud.buildMonsters(MONSTERS, (id) => this.selectMonster(id), (id) => this.selectMonster(id, true));
-    inp.on('skin', () => { if (this.state === 'title' || this.state === 'over') this.selectSkin(this.skinIndex + 1); });
-    this.hud.buildSkins(SKINS, (i) => { this.audio.init(); if (this.state === 'title' || this.state === 'over') this.selectSkin(i); });
+    inp.on('skin', () => {
+      if (this.state === 'title' || this.state === 'over') this.selectSkin(this.monster.skins ? this._skinIndexOf(this.monster) + 1 : this.skinIndex + 1);
+    });
+    this._onSkinPick = (i) => { this.audio.init(); if (this.state === 'title' || this.state === 'over') this.selectSkin(i); };
+    this.hud.buildSkins(SKINS, this._onSkinPick);
     inp.on('board', () => this.toggleBoard());
 
     const click = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); e.currentTarget.blur(); });
@@ -728,7 +754,8 @@ export class Game {
   _monsterTip() {
     if (!this.monster.glide) return;
     const touch = matchMedia('(pointer: coarse)').matches;
-    this._tip('glide', touch ? 'Mothra: keep your finger down after a jump to glide. Let go to drop.' : 'Mothra: keep holding jump after the top of a jump to glide. Let go to drop.');
+    const who = this.monster.name;
+    this._tip('glide', touch ? `${who}: keep your finger down after a jump to glide. Let go to drop.` : `${who}: keep holding jump after the top of a jump to glide. Let go to drop.`);
   }
 
   _restart() {
@@ -1343,7 +1370,7 @@ export class Game {
     else if (this.rig.blend > 0.5) this.rig.shake(0.04);
   }
 
-  /** Mothra's downstroke: a soft whoosh, and near the ground the air it pushes down stirs up dust. */
+  /** the Moth Queen's downstroke: a soft whoosh, and near the ground the air it pushes down stirs up dust. */
   _wingbeat(k) {
     if (this.state !== 'running' && this.state !== 'intro' && this.state !== 'title') return;
     this.audio.flutter(0.35 + 0.4 * k + 0.3 * this.rageK);
@@ -1360,7 +1387,7 @@ export class Game {
     }
   }
 
-  /** Glittering scale dust off Mothra's wings: a faint trail in flight, a storm while the beam fires. */
+  /** Glittering scale dust off the Moth Queen's wings: a faint trail in flight, a storm while the beam fires. */
   _wingGlitter(dt, breathAmt) {
     if (this.state !== 'running' && this.state !== 'intro') return;
     this._glitterAcc = (this._glitterAcc || 0) + dt * (2.5 + 55 * breathAmt + 20 * this.rageK);
@@ -1715,7 +1742,7 @@ export class Game {
 
     // vertical physics
     if (playing || this.state === 'dying') {
-      // gliding monsters (Mothra) fall slowly while jump is held on the way down
+      // gliding monsters (the Moth Queen) fall slowly while jump is held on the way down
       this.gliding = !!this.monster.glide && playing && !this.grounded && this.vy < 0 && this.input.jump && !this.input.duck;
       if (!this.grounded) {
         let g = CFG.gravity * (this.input.duck ? CFG.fastFall : 1);
@@ -1859,7 +1886,7 @@ export class Game {
     this.dragon.update(animDt, ds);
     if (this.dragon.wingDust) this._wingGlitter(dt, breathAmt);
 
-    // Godzilla-style plate glow: idles softly, charges up, flares when firing, burns during rage
+    // Plate glow: idles softly, charges up, flares when firing, burns during rage
     const night = this.env.nightness;
     const ready = this.charge >= 1;
     const wave = (this.time * (ready ? 0.9 : 0.5)) % 1.6 - 0.2;

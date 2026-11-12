@@ -309,6 +309,7 @@ export class HUD {
     const art = {
       kaiju: 'linear-gradient(135deg, #2e3530, #3cc8ff)',
       ghidorah: 'linear-gradient(135deg, #8a5a14, #ffd166)',
+      rex: 'linear-gradient(135deg, #2c3618, #5c6b2e 50%, #c4925a)',
       mothra: 'radial-gradient(circle at 80% 22%, #9fe8ff 0 5%, #ffd65c 6% 9%, #1a0e08 10% 13%, transparent 14%), linear-gradient(135deg, #5c3418, #e08a26 55%, #f6c44a)',
     };
     const lock = '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2z"/></svg>';
@@ -368,7 +369,7 @@ export class HUD {
     return !$('monsters').classList.contains('hidden');
   }
 
-  /** Shows the current monster's name; skins only apply to the Kaiju. */
+  /** Shows the current monster's name, and its skin swatches if it has skins. */
   setMonster(m, preview) {
     for (const id of ['monster-name', 'monster-name-over']) $(id).textContent = m.name + (preview ? ' (preview)' : '');
     for (const id of ['skins', 'over-skins']) $(id).hidden = !m.skins;
@@ -379,6 +380,7 @@ export class HUD {
   buildSkins(skins, onPick) {
     const hex = (h) => `#${h.toString(16).padStart(6, '0')}`;
     const hide = (k) => {
+      if (k.swatch != null) return hex(k.swatch);
       if (k.flat != null) return hex(k.flat);
       const c = [0x38 / 255, 0x40 / 255, 0x38 / 255].map((v, i) => Math.min(255, Math.round(255 * v * k.skin[i] * 1.6)));
       return `rgb(${c.join(',')})`;

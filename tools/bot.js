@@ -1,7 +1,7 @@
 // Autopilot, to `eval` into the page. It answers each threat the way the game's RESPONSE table says
 // (Obstacles.respond): jump low things, duck mid flyers, run under high ones, smash what's too tall.
 // Fixed, human-scale reflexes: jump 0.17 s before contact, duck from 0.45 s, smash at 0.12 s; full jumps,
-// no fast-fall. With a gliding monster (Mothra) it holds the glide only while nothing is due before it
+// no fast-fall. With a gliding monster (the Moth Queen) it holds the glide only while nothing is due before it
 // would land. It fires the breath at the gunship. Set window.__smasher = true first to also smash
 // everything breakable. In fast simulation (?sim=N) it runs on every step through game.stepHook;
 // otherwise once per frame. Results in window.__bot (deaths, log with the seed of each death).

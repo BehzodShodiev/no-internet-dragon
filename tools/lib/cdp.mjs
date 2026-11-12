@@ -36,7 +36,7 @@ export class Session {
     const proc = spawn(chromePath, [
       '--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
       '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
-      `--window-size=${w},${h}`, '--autoplay-policy=no-user-gesture-required', '--no-first-run', '--no-default-browser-check',
+      `--window-size=${w},${h}`, '--autoplay-policy=no-user-gesture-required', '--mute-audio', '--no-first-run', '--no-default-browser-check',
       '--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', 'about:blank',
     ], { stdio: 'ignore' });
     let target;

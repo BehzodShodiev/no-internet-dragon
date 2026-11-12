@@ -42,7 +42,7 @@ export function spikeColors(g, len, root, tip) {
   return g;
 }
 
-// Godzilla's plate silhouette (x along the spine, y up, tip at y = 1): a spire with lobed edges.
+// The plate silhouette (x along the spine, y up, tip at y = 1): a spire with lobed edges.
 const PLATE_OUTLINE = [
   [-0.5, 0], [-0.4, 0.22], [-0.64, 0.3], [-0.36, 0.43], [-0.52, 0.58], [-0.24, 0.64],
   [-0.32, 0.8], [-0.1, 0.84], [0, 1], [0.1, 0.83], [0.28, 0.78], [0.15, 0.63],

@@ -1,9 +1,10 @@
-// Procedural, skinned Godzilla-style dragon. Built in "design units" and scaled into world units.
+// Procedural, skinned atomic lizard. Built in "design units" and scaled into world units.
 // Legs are driven by analytic 2-bone IK so feet plant on the ground while running.
 import * as THREE from 'three';
 import { sweep, mergeGeometries } from '../gfx/geometry.js';
 import { noise3, curvedSpike, spikeColors, plateGeometry, plateColors } from './DragonHD.js';
 import { mulberry32 } from '../gfx/noise.js';
+import { voxelize } from './Voxel.js';
 
 export const DRAGON_SCALE = 0.62;
 const PLATE_BLUE = new THREE.Color(0x3cc8ff);
@@ -54,7 +55,8 @@ const sgnPow = (v, p) => Math.sign(v) * Math.abs(v) ** p;
 
 export class Dragon {
   /**
-   * variant: 'kaiju' (the Godzilla-style dragon) or 'ghidorah' (three heads, two tails, wings).
+   * variant: 'kaiju' (the atomic lizard), 'ghidorah' (the Golden Hydra: three heads, two tails, wings) or 'rex'
+   * (big head, tiny arms, no plates; with a second, voxel look that its Pixel skin shows).
    * detail: 'std', or 'hd' for the Very High model (Kaiju only): same skeleton, animation and hitboxes,
    * with real anatomy, a carved head and bony plates.
    */
@@ -89,7 +91,7 @@ export class Dragon {
   /** Frees the GPU resources of this model (when Very High swaps models). */
   dispose() {
     this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-    for (const m of [this.skinMat, this.plateMat, this.eyeMat, this.ivoryMat, this.darkMat, this.wingMat]) m?.dispose();
+    for (const m of [this.skinMat, this.plateMat, this.eyeMat, this.ivoryMat, this.darkMat, this.wingMat, this.voxelMat]) m?.dispose();
     this.plateMat.emissiveMap?.dispose();
   }
 
@@ -236,6 +238,8 @@ export class Dragon {
       color: 0xffb347, emissive: 0xff7a00, emissiveIntensity: 1.6, roughness: 0.22, metalness: 0,
     });
     this.ivoryMat = new THREE.MeshStandardMaterial({ color: 0xe9dfc6, roughness: 0.45, metalness: 0 });
+    // the Rex's Pixel look: plain painted cubes
+    if (this.variant === 'rex') this.voxelMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0 });
     if (this.detail === 'hd') {
       // teeth and claws carry their own colours (ivory teeth, dark horn claws); pupils and nostrils are glossy black
       this.ivoryMat.color.set(0xffffff);
@@ -247,9 +251,12 @@ export class Dragon {
 
   _buildMeshes() {
     const tk = this.tk;
-    const backCol = new THREE.Color(0x384038);
-    const midCol = new THREE.Color(0x4a524a);
-    const bellyCol = new THREE.Color(0xa39883);
+    const rex = this.variant === 'rex';
+    // the Rex: olive hide with dark tiger stripes over the back and a warm tan belly
+    const backCol = new THREE.Color(rex ? 0x3a4622 : 0x384038);
+    const midCol = new THREE.Color(rex ? 0x5c6b2e : 0x4a524a);
+    const bellyCol = new THREE.Color(rex ? 0xc4925a : 0xa39883);
+    const stripe = (t, c) => (rex ? 1 - 0.55 * smooth(-0.2, 0.5, c) * smooth(0.25, 0.75, Math.sin(t * 92)) * smooth(0.04, 0.2, t) : 1);
     const mouthCol = new THREE.Color(0x4a1414);
     const gumCol = new THREE.Color(0x7a2a2a);
 
@@ -262,7 +269,7 @@ export class Dragon {
       section: (t, a, out) => {
         const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
         const c = Math.cos(a), s = Math.sin(a);
-        // King Ghidorah's tail splits in two: this one bends to +z, the extra tail to -z
+        // the Golden Hydra's tail splits in two: this one bends to +z, the extra tail to -z
         const split = this.variant === 'ghidorah' ? smooth(tk[4], tk[1], t) : 0;
         const thin = 1 - 0.3 * split;
         out.x = s * rz * thin * (1 - 0.12 * Math.max(0, c)) + split * 0.55;
@@ -271,6 +278,7 @@ export class Dragon {
       color: (t, a, out) => {
         const c = Math.cos(a);
         out.copy(backCol).lerp(midCol, smooth(0.95, 0.1, c) * 0.7).lerp(bellyCol, smooth(0.0, -0.75, c) * smooth(0.02, 0.25, t));
+        out.multiplyScalar(stripe(t, c));
       },
       skin: (t) => this.spineSkin(t),
       capStart: true,
@@ -347,14 +355,14 @@ export class Dragon {
     // ---------------- arms (rigid to chest) ----------------
     const armGeos = [];
     for (const side of [1, -1]) {
-      const sh = V(1.78, 2.35, 0.5 * side);
-      const el = V(2.02, 1.98, 0.6 * side);
-      const hand = V(2.32, 1.9, 0.55 * side);
+      const sh = rex ? V(1.86, 2.4, 0.52 * side) : V(1.78, 2.35, 0.5 * side);
+      const el = rex ? V(1.98, 2.16, 0.6 * side) : V(2.02, 1.98, 0.6 * side);
+      const hand = rex ? V(2.14, 2.1, 0.56 * side) : V(2.32, 1.9, 0.55 * side);
       armGeos.push(sweep({
         points: [sh, el, hand],
         segments: 14, radial: 10, uvScale: [0.6, 0.5],
         sideHint: V(0, 0, 1),
-        section: (t, a, out) => { const r = 0.15 * (1 - 0.45 * t); out.x = Math.sin(a) * r; out.y = Math.cos(a) * r; },
+        section: (t, a, out) => { const r = (rex ? 0.1 : 0.15) * (1 - 0.45 * t); out.x = Math.sin(a) * r; out.y = Math.cos(a) * r; },
         color: (t, a, out) => out.copy(midCol),
         skin: () => [B.chest, 0, 1, 0],
         capEnd: true,
@@ -375,7 +383,10 @@ export class Dragon {
     const hp = this.rest[B.head];
     const tilt = new THREE.Matrix4().makeRotationZ(HEAD_TILT);
     const mouthY = (x) => -0.1 - 0.06 * x;
-    const mainToWorld = (g) => g.applyMatrix4(tilt).translate(hp.x, hp.y, hp.z);
+    // the Rex's head is bigger and deeper (scaled about the head joint, so it still grows out of the neck)
+    const mainToWorld = rex ? (g) => g.scale(1.24, 1.2, 1.12).applyMatrix4(tilt).translate(hp.x, hp.y, hp.z)
+      : (g) => g.applyMatrix4(tilt).translate(hp.x, hp.y, hp.z);
+    const browK = rex ? 2.2 : 1;
     const line = (x0, x1, n) => Array.from({ length: n }, (_, i) => {
       const x = x0 + ((x1 - x0) * i) / (n - 1);
       return V(x, mouthY(x));
@@ -385,7 +396,7 @@ export class Dragon {
     const rig = (g, bone) => { if (bone >= 0) skinRigid(g, bone); return g; };
 
     // Builds a whole head (skull, jaw, teeth, eyes, optional crown of horns) through toWorld.
-    // Bones < 0 give a rigid head (King Ghidorah's side heads ride on their own necks).
+    // Bones < 0 give a rigid head (the Golden Hydra's side heads ride on their own necks).
     const makeHead = (toWorld, headBone, jawBone, horns = false) => {
     // skull: rounded cranium sinking into the neck, the brow as its crest, a short blunt muzzle
     const SX0 = -0.44, SX1 = 1.4;
@@ -406,8 +417,8 @@ export class Dragon {
         const cheek = bump(x, -0.05, 0.22) * Math.max(0, 1 - c * 1.6);
         const nostril = bump(x, 1.18, 0.06) * bump(Math.abs(a), 0.45, 0.15);
         const squared = smooth(-0.2, 0.9, x); // round at the back, a little squarer at the muzzle
-        out.x = sgnPow(s, 1 - 0.2 * squared) * (w + 0.05 * brow + 0.07 * cheek);
-        out.y = c >= 0 ? sgnPow(c, 1 - 0.25 * squared) * (h + 0.08 * brow + 0.025 * nostril) : c * 0.06; // flat underside = upper lip
+        out.x = sgnPow(s, 1 - 0.2 * squared) * (w + 0.05 * browK * brow + 0.07 * cheek);
+        out.y = c >= 0 ? sgnPow(c, 1 - 0.25 * squared) * (h + 0.08 * browK * brow + 0.025 * nostril) : c * 0.06; // flat underside = upper lip
       },
       color: (t, a, out) => {
         const c = Math.cos(a);
@@ -483,13 +494,16 @@ export class Dragon {
     };
     const { skull, jaw, teeth, eyes } = makeHead(mainToWorld, B.head, B.jaw, this.variant === 'ghidorah');
 
-    // ---------------- King Ghidorah: side necks and heads, second tail, wings ----------------
+    // ---------------- the Golden Hydra: side necks and heads, second tail, wings ----------------
     if (this.variant === 'ghidorah') this._buildGhidorah({ makeHead, tilt, sweepColor: midCol });
 
-    // ---------------- dorsal plates (not on Ghidorah) ----------------
-    const plates = this.variant === 'ghidorah' ? null : this._buildPlates();
+    // ---------------- dorsal plates (not on the Hydra) ----------------
+    const plates = this.variant === 'ghidorah' || rex ? null : this._buildPlates();
 
-    const skinGeo = mergeGeometries([body, legGeo(B.thighR, HIP_Z), legGeo(B.thighL, -HIP_Z), ...toeGeos, ...armGeos, skull, jaw,
+    const legs = [legGeo(B.thighR, HIP_Z), legGeo(B.thighL, -HIP_Z)];
+    // the Pixel skin: the same model rebuilt from cubes (before the parts are merged)
+    const pixel = rex ? this._voxelModel([body, ...legs, ...armGeos, skull, jaw], [...toeGeos], teeth, clawGeos, eyes) : null;
+    const skinGeo = mergeGeometries([body, ...legs, ...toeGeos, ...armGeos, skull, jaw,
       ...(this.extraTail ? [this.extraTail] : [])].map(clean), false);
     const keratinGeo = mergeGeometries([...teeth, ...clawGeos].map(clean), false);
     const eyeGeo = mergeGeometries(eyes.map(clean), false);
@@ -508,12 +522,44 @@ export class Dragon {
     const eyeMesh = mk(eyeGeo, this.eyeMat);
     this.meshes = [skinMesh, mk(keratinGeo, this.ivoryMat), eyeMesh];
     if (plates) this.meshes.push(mk(plates, this.plateMat));
+    const glowing = [eyeMesh];
+    if (pixel) {
+      // both looks share the skeleton; setSkin shows one of them
+      const cubes = [mk(pixel.skin, this.voxelMat)];
+      if (pixel.eye) { cubes.push(mk(pixel.eye, this.eyeMat)); glowing.push(cubes[1]); }
+      this.styles = { smooth: [...this.meshes], pixel: cubes };
+      this.meshes.push(...cubes);
+    }
     for (const m of this.meshes) {
-      m.castShadow = m !== eyeMesh;
+      m.castShadow = !glowing.includes(m);
       m.receiveShadow = true;
       m.frustumCulled = false;
       this.group.add(m);
     }
+  }
+
+  /**
+   * The Rex's Pixel look: the smooth model's parts voxelised (`Voxel.js`) on the same skeleton. Solids are
+   * the closed sweeps; toes, teeth, claws and eyes are too thin to fill, so they mark the cells they touch.
+   */
+  _voxelModel(solids, toes, teeth, claws, eyes) {
+    const N = 240;
+    const samples = Array.from({ length: N + 1 }, (_, i) => { const t = i / N; const p = this.curve.getPointAt(t); return [t, p.x, p.y]; });
+    const res = voxelize(solids, [
+      ...toes.map((geo) => ({ geo })),
+      ...teeth.map((geo) => ({ geo, color: [0.5, 0.46, 0.36] })), // linear: bright enough to read as ivory, not to bloom
+      ...claws.map((geo) => ({ geo, color: [0.16, 0.14, 0.12] })),
+      ...eyes.map((geo) => ({ geo, eye: true })),
+    ], {
+      size: 0.12,
+      isSpine: (b) => b <= B.neck2,
+      cornerSkin: (x, y) => {
+        let best = 0, bd = Infinity;
+        for (const [t, px, py] of samples) { const d = (px - x) ** 2 + (py - y) ** 2; if (d < bd) { bd = d; best = t; } }
+        return this.spineSkin(best);
+      },
+    });
+    return res;
   }
 
   /**
@@ -879,7 +925,7 @@ export class Dragon {
   }
 
   /**
-   * King Ghidorah's extras: two side necks and heads that sway on their own, a split tail and a pair of
+   * the Golden Hydra's extras: two side necks and heads that sway on their own, a split tail and a pair of
    * wings. The side heads and wings are rigid meshes riding on the chest bone; the extra tail is skinned
    * to the tail bones like the body. All of it is decoration: the hitbox is the same body as everyone's.
    */
@@ -1130,6 +1176,14 @@ export class Dragon {
     this.glowColor.set(skin.glow);
     this.eyeColor.set(skin.eye);
     this.hitX = skin.hitX;
+    if (this.styles) {
+      // the Rex: a skin picks the smooth model or the cubes
+      const pix = skin.model === 'pixel';
+      for (const m of this.styles.smooth) m.visible = !pix;
+      for (const m of this.styles.pixel) m.visible = pix;
+      this.voxelMat.color.setRGB(...skin.skin);
+      this.voxelMat.roughness = skin.rough;
+    }
     this.setRage(0);
   }
 
@@ -1191,7 +1245,7 @@ export class Dragon {
       + 0.65 * this.roar + 0.55 * this.breath + 0.35 * this.dead + 0.8 * this.bite;
     bn[B.jaw].rotation.z = -jawOpen;
 
-    // ---- King Ghidorah: side heads sway on their own necks, wings beat with the stride ----
+    // ---- the Golden Hydra: side heads sway on their own necks, wings beat with the stride ----
     if (this.sideHeads) {
       for (const { pivot, side } of this.sideHeads) {
         const p2 = time * 1.6 + side * 1.9;
@@ -1245,7 +1299,7 @@ export class Dragon {
       this.lastStance[leg] = inStance;
     }
 
-    // ---- glow (Godzilla plates) ----
+    // ---- glow (dorsal plates) ----
     this.group.updateMatrixWorld(true);
   }
 
@@ -1310,7 +1364,7 @@ export class Dragon {
     return this.anchor.snout.getWorldPosition(target);
   }
 
-  /** World positions of King Ghidorah's side mouths (empty for one-headed monsters). */
+  /** World positions of the Golden Hydra's side mouths (empty for one-headed monsters). */
   getSideMouths(targets) {
     if (!this.sideHeads) return 0;
     this.sideHeads.forEach((h, i) => h.mouth.getWorldPosition(targets[i]));

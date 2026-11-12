@@ -1,6 +1,6 @@
 # No Internet Dragon
 
-A realistic take on Chrome's offline dino game. A Godzilla-style dragon runs, jumps, ducks and smashes its way through three levels (a desert army outpost, a city at night and a volcano fortress), each ending in a gunship fight. You can switch between the classic side-scrolling **2D** view and a third-person **3D** view at any moment, even mid-run.
+A realistic take on the classic offline runner. A giant atomic lizard runs, jumps, ducks and smashes its way through three levels (a desert army outpost, a city at night and a volcano fortress), each ending in a gunship fight. You can switch between the classic side-scrolling **2D** view and a third-person **3D** view at any moment, even mid-run.
 
 Everything is generated in code: the creature, textures, terrain, sky and sound. The game downloads no assets and plays fully offline.
 
@@ -23,7 +23,7 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 
 | Action | Keyboard | Touch |
 | --- | --- | --- |
-| Jump (hold for higher; as Mothra, keep holding to glide) | `Space` / `↑` / `W` | tap, or the ↑ button |
+| Jump (hold for higher; as Moth Queen, keep holding to glide) | `Space` / `↑` / `W` | tap, or the ↑ button |
 | Smash | `→` / `D` / `E` | claw button |
 | Duck / fast-fall | `↓` / `S` | swipe down, or the ↓ button |
 | Atomic breath (when the meter is full) | `F` / `X` / `Shift` | flame button |
@@ -38,13 +38,13 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 | Pick a skin (title / game over) | `K` | colour swatches |
 | Monsters panel (title / game over) | `B` | Monster button |
 
-The rules follow Chrome's game. The speed ramps up over about two minutes. Pterodactyls appear after 250 points of distance at three heights: jump the low ones, duck the middle ones, run under the high ones. Every 100 points of distance beeps, and the high score is saved. Godzilla's breath is the core addition: every run starts with the meter mostly full, it fills as you run (70 points of distance for a full charge), and when it's full it clears everything in front of you for bonus points. Pressing it early shows how far along the charge is. (Distance points are the score before the combo multiplier described below.)
+The rules follow the classic offline runner. The speed ramps up over about two minutes. Pterodactyls appear after 250 points of distance at three heights: jump the low ones, duck the middle ones, run under the high ones. Every 100 points of distance beeps, and the high score is saved. the atomic lizard's breath is the core addition: every run starts with the meter mostly full, it fills as you run (70 points of distance for a full charge), and when it's full it clears everything in front of you for bonus points. Pressing it early shows how far along the charge is. (Distance points are the score before the combo multiplier described below.)
 
-The two views play differently. In 2D you see about 20 units of track ahead, like Chrome. The 3D camera sees six times further, so 3D makes up for it: the world runs 20% faster and speeds up 1.5× quicker, obstacles come in tighter sequences, and pterodactyls arrive from 120 points and three times as often. The breath charges at the same rate in both views. Switching views mid-run eases between the two rule sets, and since points come from distance, 3D scores faster.
+The two views play differently. In 2D you see about 20 units of track ahead, like the classic game. The 3D camera sees six times further, so 3D makes up for it: the world runs 20% faster and speeds up 1.5× quicker, obstacles come in tighter sequences, and pterodactyls arrive from 120 points and three times as often. The breath charges at the same rate in both views. Switching views mid-run eases between the two rule sets, and since points come from distance, 3D scores faster.
 
 ## Kaiju Rampage
 
-On top of the Chrome rules, each run has goals, a power-up and set pieces:
+On top of the classic rules, each run has goals, a power-up and set pieces:
 
 - **Smash.** A jaws-first lunge that breaks most things just ahead of the snout: cacti, tanks, helicopters, cars, watchtowers, fuel tanks and buildings, each for points and combo, with a freeze-frame and flying debris. Boulders and steel anti-tank "hedgehogs" are too solid (they clang), so jump those. Watchtowers, fuel tanks and buildings are too tall to jump, so smash them or burn them with the breath. The jaws stay dangerous for 0.45 s and reach 3 units ahead, so the timing is forgiving, but a smash that hits nothing has a longer cooldown, so mashing the key is a gamble. Smash a shell or missile just before it hits and it flies back: a reflected shell destroys the tank that fired it, and a reflected missile damages the gunship. Timing pays: a bite pressed at the last instant (the target within 1.2 units of the jaws) is **PERFECT** (double points, +2 combo, a heavier freeze-frame), smashes within 1.5 s of each other make a DOUBLE or TRIPLE SMASH, and biting a flyer out of the air is a SKY BITE; together they never pay more than double. Every smash also adds a little Kaiju Rage.
 - **Radiation crystals and combos.** Crystals are laid along the arc of a full jump over obstacles, in lines you collect just by running, and in high trios that are worth an extra jump if there's room. Every crystal, every obstacle cleared and every close call adds to a combo chain. The multiplier rises to ×2 at 10, ×3 at 30, ×4 at 60 and ×5 at 100, and applies to every point you earn. Let a crystal slip past and the chain resets, with two exceptions: crystals arcing over something you smash or burn fly to you instead, and skipping a high bonus trio costs nothing. Every obstacle the breath burns adds to the chain too (three or more in one breath is a MULTI-BURN). A jump pressed up to 0.12 s before landing still happens the moment you land.
@@ -56,7 +56,7 @@ Pick one on the title screen (the world behind the menu changes to match) or str
 
 | Level | Stages | Character |
 | --- | --- | --- |
-| **1 · Desert Outpost** ★ | Desert run → Army outpost → Gunship | Chrome's pace, with a day/night cycle. Cacti, pterodactyls, tanks, attack helicopters, watchtowers, fuel tanks, steel hedgehogs. |
+| **1 · Desert Outpost** ★ | Desert run → Army outpost → Gunship | The classic pace, with a day/night cycle. Cacti, pterodactyls, tanks, attack helicopters, watchtowers, fuel tanks, steel hedgehogs. |
 | **2 · Night City** ★★ | City rampage → City siege → Gunship over the city | 12% faster, always at blue hour. A road with street lamps and pools of light, a lit skyline, cars with headlights, buildings to flatten, then the army in the streets. |
 | **3 · Volcano Fortress** ★★★ | Ashlands → Inferno fortress → Inferno gunship | 25% faster, under an ember sky. Ash with glowing lava veins, lava pools to jump, meteors that mark their landing spot and leave a burning crater, basalt pillars to smash, then the army again. |
 
@@ -66,7 +66,7 @@ Some tanks fire a shell first; a tank only fires when the track between it and t
 
 **Seeing at night.** After dark (and in the volcano's dusk) the dragon's glowing plates throw a soft forward light that picks out what's coming. Pterodactyls are painted in warm rust and cream with a glowing rim around their silhouettes (helicopters get a subtler one), cars carry head and tail lights, steel hedgehogs have a hazard-yellow beam and a blinking red beacon, the city's street lights and warm ambient keep the road readable, and the volcano's lava veins stay well clear of the paler ash path the dragon runs on.
 
-The autopilot used for testing (full jumps, fixed reflexes, no fast-fall, smashing only what can't be jumped) survives every level in both views, so every pattern can be cleared. It does so with every monster; as Mothra it also glides whenever nothing is due before it would land.
+The autopilot used for testing (full jumps, fixed reflexes, no fast-fall, smashing only what can't be jumped) survives every level in both views, so every pattern can be cleared. It does so with every monster; as Moth Queen it also glides whenever nothing is due before it would land.
 
 ## Skins
 
@@ -75,12 +75,12 @@ Seven looks after different film eras, picked with the swatches on the title or 
 | Skin | Look | Hitbox width / score |
 | --- | --- | --- |
 | Classic | charcoal hide, pale plates, atomic blue | 100% |
-| Showa | grey-green hide, white plates, white-blue breath | 95% |
-| Millennium | green hide, magenta plates, orange-red breath | 100% |
-| Evolved | dark hide, hot-pink plates, pink breath | 108% |
+| Retro | grey-green hide, white plates, white-blue breath | 95% |
+| Jungle | green hide, magenta plates, orange-red breath | 100% |
+| Neon | dark hide, hot-pink plates, pink breath | 108% |
 | Burning | molten cracks glowing across the hide, red breath | 110% |
 | Shin | red-brown hide, violet glow between the scales, purple breath | 88% |
-| Mecha | silver armour, cyan core, red eyes | 112% |
+| Steel | silver armour, cyan core, red eyes | 112% |
 
 ## Monsters
 
@@ -88,11 +88,14 @@ Everyone starts with the **Kaiju** (the dragon above, with its skins). Other mon
 
 | Monster | How to unlock | Notes |
 | --- | --- | --- |
-| Kaiju | from the start | seven skins |
-| **King Ghidorah** | down 5 gunships in total | three heads (staggered so all three read in 2D), two tails, golden wings, gravity beams from every mouth; wide build: hitbox 115%, score ×1.15 |
-| **Mothra** | collect 500 crystals in total | a giant moth that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing wing patterns, a wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score ×0.9 |
+| Kaiju | from the start | twelve skins |
+| **Golden Hydra** | down 5 gunships in total | three heads (staggered so all three read in 2D), two tails, golden wings, gravity beams from every mouth; wide build: hitbox 115%, score ×1.15 |
+| **Moth Queen** | collect 500 crystals in total | a giant moth that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing wing patterns, a wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score ×0.9 |
+| **Rex** | smash 100 things in total | a tyrant lizard with a huge head, tiny arms and no plates. Two skins: **Classic** (olive with tiger stripes, fire breath) and **Pixel** (the same model rebuilt from cubes by `Voxel.js`, arcade-green breath); both share the Kaiju's skeleton, so they play identically |
 
-Every monster has the Kaiju's hitbox heights (running, ducking and in the air), so size never makes anything easier or harder to clear; only the width varies. More are planned (Rodan, Gigan, Destoroyah, SpaceGodzilla); see `docs/ROADMAP.md`.
+Every monster has the Kaiju's hitbox heights (running, ducking and in the air), so size never makes anything easier or harder to clear; only the width varies. More are planned; see `docs/ROADMAP.md`.
+
+Names are original: the roster and skins avoid film-franchise names (internal ids such as `ghidorah` and `mothra` stay, because players' saved progress and leaderboard rows store them).
 
 ## Company leaderboard
 
@@ -106,14 +109,14 @@ When the game is opened as a shared claude.ai artifact, it shows a live leaderbo
 
 ## What's in it
 
-- **Dragon.** A procedural skinned mesh with 18 bones. The body, tail and neck are swept along a spine curve. Legs use analytic 2-bone inverse kinematics, so the feet plant on the sand at any speed. The scale texture is Voronoi-based (normal, roughness and AO maps). Three rows of dorsal plates glow with a Godzilla-style pulse that travels down the spine.
+- **Dragon.** A procedural skinned mesh with 18 bones. The body, tail and neck are swept along a spine curve. Legs use analytic 2-bone inverse kinematics, so the feet plant on the sand at any speed. The scale texture is Voronoi-based (normal, roughness and AO maps). Three rows of dorsal plates glow with a atomic-lizard pulse that travels down the spine.
 - **World.** Dunes come from a periodic heightfield displaced on the GPU and snapped to its grid, so they never shimmer while scrolling. Cacti are ribbed saguaros. There are eroded boulders, striped mesas, dry brush and footprints in the sand. All scenery is instanced and tiles endlessly with no per-frame updates.
 - **Lighting.** A physically based (Preetham) sky drives image-based lighting, and fog is computed from the same scattering model so the horizon blends cleanly. Procedural clouds drift across the sky, lit by the sun (pink at sunset, ash over the volcano), and clear nights show the Milky Way and the odd shooting star. A day/night cycle follows your score: clear noon, golden hour, dusk, then a moonlit night with stars. Each world has its own colour grade. Shadows are soft, and in 3D they reach well down the track.
 - **Explosions.** A fireball that burns from white-hot through orange into a rising puff of smoke, a shockwave ring racing over the ground, a flash of light on everything nearby and a scorch mark left in the sand. Smashed obstacles break into tumbling rubble.
 - **Post-processing.** MSAA (FXAA on Low), bloom, filmic tone mapping, colour grading, vignette, film grain, subtle chromatic aberration, and heat haze along the horizon. A guard pass stops any stray NaN/Inf pixel from blacking out the frame.
 - **Military.** Tanks, attack helicopters and the tandem-rotor gunship are modelled in code from rounded boxes and swept hulls, with spinning rotors, recoiling barrels, muzzle flashes, searchlights at night, and shell and missile trails.
 - **Music.** An original score, generated live: a 16th-note sequencer plays a theme per world (a desert mode, a minor synth theme for the city, a heavy Phrygian one for the volcano) plus title and game-over moods. Six layers (pad, bass, drums, arpeggio, brass, lead) fade in with the action: running, the army stages, the gunship, Kaiju Rage. Stingers mark game over, a new best, a gunship down and an unlock.
-- **Audio.** Everything is synthesized with WebAudio and mixed on separate effect, music, interface and ambience buses into a compressor, a limiter and a soft clipper (an offline render test checks that nothing clips). Each world has its own reverb and ambience: desert wind, city hum and traffic, volcanic rumble and crackling lava. Every monster has its own voice and beam: the Kaiju's roar and atomic breath, Ghidorah's three staggered roars and crackling gravity beams, Mothra's high trill and shimmering scale storm. Roars and explosions duck the music. Pterodactyls screech as they come in, meteors whistle down, missiles whoosh off the gunship, windows shatter, and the menus tick and click. The sound stops while paused or in a background tab.
+- **Audio.** Everything is synthesized with WebAudio and mixed on separate effect, music, interface and ambience buses into a compressor, a limiter and a soft clipper (an offline render test checks that nothing clips). Each world has its own reverb and ambience: desert wind, city hum and traffic, volcanic rumble and crackling lava. Every monster has its own voice and beam: the Kaiju's roar and atomic breath, Hydra's three staggered roars and crackling gravity beams, Moth Queen's high trill and shimmering scale storm. Roars and explosions duck the music. Pterodactyls screech as they come in, meteors whistle down, missiles whoosh off the gunship, windows shatter, and the menus tick and click. The sound stops while paused or in a background tab.
 
 ## Performance
 
@@ -152,9 +155,10 @@ src/
   entities/Obstacles.js   cacti, boulders, flyers, tanks, projectiles, spawner, crystal patterns
   entities/Military.js    tank, helicopter, watchtower, fuel tank, hedgehog, shell and missile models
   entities/Boss.js        the gunship boss
-  entities/Skins.js       the seven dragon skins and their builds
+  entities/Skins.js       the Kaiju's twelve skins and the Rex's two looks, with their builds
+  entities/Voxel.js       voxeliser: rebuilds a skinned model from cubes (the Rex's Pixel look)
   entities/Monsters.js    the monster roster and unlock goals
-  entities/Moth.js        Mothra: painted fan-shaped wings, IK legs, same interface as the dragon
+  entities/Moth.js        Moth Queen: painted fan-shaped wings, IK legs, same interface as the dragon
   game/Progress.js        lifetime stats and unlocks (saved on tab hide too, merged across tabs)
   game/PerfMonitor.js     ?perf overlay: frame times, CPU/GPU time, draw calls, triangles
   entities/Crystals.js    instanced radiation crystals

@@ -341,7 +341,7 @@ export class AudioEngine {
     }
   }
 
-  /** kind: 'growl' (the Kaiju), 'triple' (three heads, a beat apart), 'trill' (Mothra's high, fluttering cry). */
+  /** kind: 'growl' (the Kaiju), 'triple' (three heads, a beat apart), 'trill' (the Moth Queen's high, fluttering cry). */
   roar(duration = 1.6, pitch = 1, kind = 'growl') {
     if (!this.ctx) return;
     this.duck(0.55, duration * 0.6);
@@ -403,7 +403,7 @@ export class AudioEngine {
     n.stop(t + duration + 0.05);
   }
 
-  /** kind: 'atomic' (the Kaiju's roaring beam), 'gravity' (Ghidorah's crackling, pulsing beams), 'dust' (Mothra's shimmering scale storm). */
+  /** kind: 'atomic' (the Kaiju's roaring beam), 'gravity' (the Hydra's crackling, pulsing beams), 'dust' (the Moth Queen's shimmering scale storm). */
   breath(duration = 1.2, kind = 'atomic') {
     if (!this.ctx) return;
     this.duck(0.45, duration);
@@ -717,7 +717,7 @@ export class AudioEngine {
     [659.25, 987.77].forEach((f, i) => this._tone('triangle', f, t + i * 0.09, 0.005, 0.1, 0.3));
   }
 
-  /** Ghidorah's gravity beams: twin buzzing saws chopped by a fast tremolo, with crackles. */
+  /** the Hydra's gravity beams: twin buzzing saws chopped by a fast tremolo, with crackles. */
   _gravityBeam(duration) {
     const ctx = this.ctx, t = ctx.currentTime;
     const out = ctx.createGain();
@@ -765,7 +765,7 @@ export class AudioEngine {
     }
   }
 
-  /** Mothra's scale storm: a bright hiss swelling under a cascade of glassy chimes. */
+  /** the Moth Queen's scale storm: a bright hiss swelling under a cascade of glassy chimes. */
   _dustBeam(duration) {
     const ctx = this.ctx, t = ctx.currentTime;
     const n = this._noiseSrc();
