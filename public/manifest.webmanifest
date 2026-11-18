@@ -1,7 +1,7 @@
 {
   "name": "No Internet Dragon",
   "short_name": "Dragon",
-  "description": "A realistic 2D/3D take on Chrome's offline dino game, starring a Godzilla-style dragon.",
+  "description": "A 2D/3D endless runner for when the internet is down, starring a giant atomic lizard.",
   "start_url": "./",
   "display": "fullscreen",
   "orientation": "landscape",

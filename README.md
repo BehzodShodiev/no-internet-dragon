@@ -84,6 +84,10 @@ Seven looks after different film eras, picked with the swatches on the title or 
 
 ## Monsters
 
+**Crystal shop.** Crystals you collect are also money: the swatches with a small gem are shop skins (six for the Kaiju, three for the Rex, 300–1,600 crystals). Click one to try it on, then **Buy**; your balance (lifetime crystals minus what you've spent) sits beside the swatches. Shop skins are cosmetic only: they play and score exactly like the default look, and every skin that was free stays free. Prices are fixed and shown up front (no random rewards). Purchases are kept with your progress (`Progress.spent`, `Progress.owned`) and follow you to other devices through your leaderboard row. A skin you only tried on never starts a run.
+
+**Music switch.** The ♪ button (or `N`) turns the music off on its own; sound effects stay.
+
 Everyone starts with the **Kaiju** (the dragon above, with its skins) and the **Rex**; new players begin as the Pixel Rex. Other monsters are locked and earned by playing. Goals count across all your runs, on any level, and the **Monsters** panel shows each goal with a progress bar. Lifetime stats and unlocks are kept in the browser and mirrored into your leaderboard row, so they follow you to other devices. The artifact's owner can preview a locked monster from the panel.
 
 | Monster | How to unlock | Notes |

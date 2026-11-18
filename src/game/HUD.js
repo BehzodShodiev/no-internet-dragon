@@ -222,6 +222,11 @@ export class HUD {
     this.el.sound.classList.toggle('muted', m);
   }
 
+  /** Wires the shop's buy buttons (title card and game-over screen) to onBuy. */
+  bindShop() {
+    for (const id of ['skin-buy', 'skin-buy-over']) $(id).addEventListener('click', (e) => { e.stopPropagation(); this.onBuy?.(); });
+  }
+
   setQuality(label) {
     this.el.quality.textContent = label;
   }
@@ -400,9 +405,11 @@ export class HUD {
       // hide, plate glow and breath, corner to corner
       b.style.background = `linear-gradient(135deg, ${hide(k)} 0 46%, ${glow(k)} 46% 72%, ${breath(k)} 72% 100%)`;
       b.addEventListener('click', (e) => { e.stopPropagation(); onPick(i); b.blur(); });
+      if (k.price) b.dataset.price = k.price;
       return b;
     };
     this.skins = skins;
+    this.skinIndexShown = null; // a new list: the old index means nothing here
     this.skinButtons = [...skins.map(make), ...skins.map(make)];
     $('skins').replaceChildren(...this.skinButtons.slice(0, skins.length));
     $('over-skins').replaceChildren(...this.skinButtons.slice(skins.length));
@@ -412,8 +419,39 @@ export class HUD {
     const n = this.skins.length;
     this.skinButtons.forEach((b, i) => b.setAttribute('aria-checked', String(i % n === index)));
     const k = this.skins[index];
+    this.skinIndexShown = index;
     const pct = Math.round(k.hitX * 100);
-    $('skin-info').textContent = `${k.name} · ${k.note} · hitbox ${pct}% wide · score ×${k.hitX.toFixed(2)}`;
+    const owned = !this.shopOwns || this.shopOwns(k);
+    $('skin-info').textContent = owned ? `${k.name} · ${k.note} · hitbox ${pct}% wide · score ×${k.hitX.toFixed(2)}`
+      : `${k.name} · ${k.note} · trying it on`;
+    // a shop skin not bought yet: the buy button, on the title card and the game-over screen
+    for (const id of ['skin-buy', 'skin-buy-over']) {
+      const b = $(id);
+      b.hidden = owned;
+      if (owned) continue;
+      const short = this.shopBalance < k.price;
+      b.classList.toggle('short', short);
+      b.innerHTML = short ? `<span class="gem"></span>${k.price} · need ${k.price - this.shopBalance} more` : `Buy for <span class="gem"></span>${k.price}`;
+    }
+  }
+
+  /** owns(skin) says whether a shop skin is bought; balance: crystals to spend. Marks locked swatches. */
+  setShop(owns, balance) {
+    this.shopOwns = owns;
+    this.shopBalance = balance;
+    for (const id of ['wallet', 'wallet-over']) $(id).querySelector('b').textContent = balance.toLocaleString('en-US');
+    const n = this.skins.length;
+    this.skinButtons.forEach((b, i) => {
+      const k = this.skins[i % n];
+      const locked = !owns(k);
+      b.classList.toggle('locked', locked);
+      b.title = locked ? `${k.name}: ${k.note} · ${k.price} crystals` : `${k.name}: ${k.note}`;
+    });
+    if (this.skinIndexShown != null) this.setSkin(this.skinIndexShown);
+  }
+
+  setMusicOn(on) {
+    $('btn-music').classList.toggle('muted', !on);
   }
 
   /** Marks the chosen level, shows its blurb and each level's personal best. */

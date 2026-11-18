@@ -22,6 +22,10 @@
             <svg class="on" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
             <svg class="off" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z" /><path d="M16.5 9.5l5 5m0-5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
           </button>
+          <button id="btn-music" class="btn icon" title="Music (N)" aria-label="Toggle music">
+            <svg class="on" viewBox="0 0 24 24"><path d="M9 5.2 20 3v12.3a3 3 0 1 1-2-2.83V7.45l-7 1.4v8.45a3 3 0 1 1-2-2.83z" /></svg>
+            <svg class="off" viewBox="0 0 24 24"><path d="M9 5.2 20 3v12.3a3 3 0 1 1-2-2.83V7.45l-7 1.4v8.45a3 3 0 1 1-2-2.83z" opacity=".45" /><path d="M4 4l16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg>
+          </button>
           <button id="btn-quality" class="btn text" title="Graphics quality (Q)" aria-label="Graphics quality">AUTO</button>
           <button id="btn-pause" class="btn icon" title="Pause (P)" aria-label="Pause">
             <svg class="p" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" /><rect x="14" y="5" width="4" height="14" rx="1" /></svg>
@@ -89,14 +93,14 @@
     <section id="title-screen" class="hidden">
       <div class="card">
         <div class="dino" id="dino-icon" aria-hidden="true"></div>
-        <h1>No internet</h1>
-        <p class="try">Try:</p>
+        <h1>No internet? Go stomp.</h1>
+        <p class="try">While the connection is down:</p>
         <ul>
-          <li>Checking the network cables, modem, and router</li>
-          <li>Reconnecting to Wi-Fi</li>
-          <li>Outrunning the desert on the back of a dragon</li>
+          <li>Stomp through a desert outpost</li>
+          <li>Smash a city at night</li>
+          <li>Outrun a volcano fortress</li>
         </ul>
-        <p class="err">ERR_INTERNET_DISCONNECTED</p>
+        <p class="err">PLAYS FULLY OFFLINE</p>
         <div class="levels" id="levels" role="radiogroup" aria-label="Level"></div>
         <p class="lvl-blurb" id="lvl-blurb"></p>
         <div class="skins-row">
@@ -105,8 +109,10 @@
               <span class="lbl">MONSTER</span><b id="monster-name">Kaiju</b><span class="chev" aria-hidden="true">›</span>
             </button>
             <div class="skins" id="skins" role="radiogroup" aria-label="Skin"></div>
+            <span class="wallet" id="wallet" title="Crystals to spend on skins (locked swatches)"><span class="gem" aria-hidden="true"></span><b>0</b></span>
           </div>
           <p class="skin-info" id="skin-info"></p>
+          <button class="skin-buy" id="skin-buy" type="button" hidden></button>
         </div>
         <button id="btn-start" class="primary">
           <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
@@ -143,6 +149,7 @@
           <span class="lbl">MONSTER</span><b id="monster-name-over">Kaiju</b><span class="chev" aria-hidden="true">›</span>
         </button>
         <div class="skins over-skins" id="over-skins" role="radiogroup" aria-label="Skin"></div>
+        <div class="over-shop"><span class="wallet" id="wallet-over" title="Crystals to spend on skins"><span class="gem" aria-hidden="true"></span><b>0</b></span><button class="skin-buy" id="skin-buy-over" type="button" hidden></button></div>
       </div>
       <div class="stats">
         <div><span>SCORE</span><b id="final-score">00000</b></div>

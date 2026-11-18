@@ -85,6 +85,38 @@ check('old progress loads', st.crystals === 600, JSON.stringify(st));
 check('met goals unlock on load', st.unlocked.includes('ghidorah') && st.unlocked.includes('mothra'));
 check('saved monster, level and bests restored', st.monster === 'mothra' && st.level === 1 && st.bests[0] === 777 && st.bests[1] === 888);
 
+// 7. crystal shop: buying costs the price once, needs the crystals, is saved, merged and synced to the
+// row, and a skin only tried on never starts a run
+await open({});
+await s.evaluate(`(() => { localStorage.setItem('dragon.progress', JSON.stringify({ stats: { crystals: 1000 }, unlocked: ['kaiju'] }));
+  localStorage.setItem('dragon.monster', 'kaiju'); localStorage.removeItem('dragon.skin'); return true; })()`);
+await s.send('Page.reload', {});
+await sleep(500);
+await s.waitState('title', 90000);
+for (let i = 0; i < 40 && (await s.evaluate('window.__game.board.status')) !== 'ready'; i++) await sleep(150);
+const buy = await s.evaluate(`(() => { const g = window.__game; g.selectMonster('kaiju');
+  const at = (id) => g.monster.skins.findIndex((k) => k.id === id);
+  g.selectSkin(at('midnight')); const before = g.progress.balance; g.buySkin();
+  const after = g.progress.balance, owned = g.progress.owned.has('midnight'), saved = localStorage.getItem('dragon.skin');
+  g.buySkin(); const again = g.progress.balance; // buying what you own costs nothing
+  g.selectSkin(at('ivory')); g.buySkin(); // 1600: can't afford
+  const ivory = g.progress.owned.has('ivory'), tried = g.skin.id, savedAfter = localStorage.getItem('dragon.skin');
+  g._startIntro(); const runSkin = g.skin.id;
+  return JSON.stringify({ before, after, owned, saved, again, ivory, tried, savedAfter, runSkin }); })()`).then((j) => JSON.parse(j));
+check('a shop skin can be bought', buy.before === 1000 && buy.after === 700 && buy.owned && buy.saved === 'midnight' && buy.again === 700, JSON.stringify(buy));
+check('not without the crystals', !buy.ivory && buy.savedAfter === 'midnight', JSON.stringify(buy));
+check('a tried-on skin never starts a run', buy.tried === 'ivory' && buy.runSkin === 'midnight', JSON.stringify(buy));
+await sleep(1500);
+const shopRow = await row();
+check('purchase synced to the row', shopRow?.progress?.owned?.includes('midnight') && shopRow.progress.spent === 300, JSON.stringify(shopRow?.progress));
+await s.send('Page.reload', {});
+await sleep(500);
+await s.waitState('title', 90000);
+const kept = await s.evaluate(`(() => { const p = window.__game.progress; const a = { owned: p.owned.has('midnight'), balance: p.balance };
+  p.merge({ spent: 100, owned: ['dune'] }); a.mergedSpent = p.spent; a.mergedOwned = [...p.owned].sort().join(','); return JSON.stringify(a); })()`).then((j) => JSON.parse(j));
+check('purchase kept after a reload', kept.owned && kept.balance === 700, JSON.stringify(kept));
+check('purchases merge (spent: larger, owned: union)', kept.mergedSpent === 300 && kept.mergedOwned === 'dune,midnight', JSON.stringify(kept));
+
 await s.close();
 await close();
 console.log(fails ? `\n${fails} check(s) failed` : '\nall data checks passed');

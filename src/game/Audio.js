@@ -14,6 +14,9 @@ export class AudioEngine {
     this.biome = 'desert';
     this.live = 0; // sources currently playing (busy() lets optional sounds skip when the mix is crowded)
     try { this.muted = localStorage.getItem('dragon.muted') === '1'; } catch { /* storage unavailable */ }
+    // music can be switched off on its own (sound effects stay): some players avoid music
+    this.musicOn = true;
+    try { this.musicOn = localStorage.getItem('dragon.music') !== '0'; } catch { /* storage unavailable */ }
   }
 
   init() {
@@ -51,7 +54,7 @@ export class AudioEngine {
     const bus = (v) => { const g = ctx.createGain(); g.gain.value = v; g.connect(this.out); return g; };
     this.master = bus(0.8); // sound effects
     this.musicLevel = 0.36;
-    this.musicBus = bus(this.musicLevel);
+    this.musicBus = bus(this.musicOn ? this.musicLevel : 0);
     this.uiBus = bus(0.5);
     this.amb = bus(0.9);
     // reverb send (impulse per biome, see setBiome)
@@ -76,6 +79,7 @@ export class AudioEngine {
     this._startAmbience();
     this.setBiome(this.biome);
     this.music = new Music(this, this.musicBus);
+    this.music.enabled = this.musicOn;
     this.music.start();
   }
 
@@ -93,6 +97,7 @@ export class AudioEngine {
   /** Dips the music under a big sound (roar, explosion) and brings it back. */
   duck(amount = 0.5, hold = 0.4) {
     if (!this.ctx) return;
+    if (!this.musicOn) return;
     const g = this.musicBus.gain, t = this.ctx.currentTime;
     g.cancelScheduledValues(t);
     g.setTargetAtTime(this.musicLevel * (1 - amount), t, 0.03);
@@ -195,6 +200,17 @@ export class AudioEngine {
     p.pan.value = clamp((x - 3) / 26, -0.8, 0.8);
     p.connect(this.master);
     return p;
+  }
+
+  /** Music on or off (sound effects unaffected); remembered in this browser. */
+  setMusic(on) {
+    this.musicOn = on;
+    try { localStorage.setItem('dragon.music', on ? '1' : '0'); } catch { /* ignore */ }
+    if (!this.ctx) return;
+    this.music.enabled = on;
+    const g = this.musicBus.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setTargetAtTime(on ? this.musicLevel : 0, t, 0.15);
   }
 
   setMuted(m) {

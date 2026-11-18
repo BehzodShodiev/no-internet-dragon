@@ -307,6 +307,7 @@ export class Music {
   // ------------------------------------------------------------------ stingers
   /** One-shot phrases: 'over' | 'best' | 'unlock' | 'clear'. */
   stinger(kind) {
+    if (!this.enabled) return; // music switched off
     const ctx = this.ctx;
     const t = ctx.currentTime + 0.05;
     const root = this.theme.root + 12;

@@ -1,4 +1,4 @@
-// Lifetime stats and monster unlocks for this player. Kept in browser storage, and mirrored into the
+// Lifetime stats, monster unlocks and crystal-shop purchases for this player. Kept in browser storage, and mirrored into the
 // player's leaderboard row (when they can write to it) so it follows them to other devices.
 const KEY = 'dragon.progress';
 export const STATS = ['runs', 'crystals', 'gunships', 'smashes', 'rages', 'closeCalls', 'bestScore'];
@@ -7,16 +7,39 @@ export class Progress {
   constructor() {
     this.stats = Object.fromEntries(STATS.map((s) => [s, 0]));
     this.unlocked = new Set(['kaiju']);
+    // the shop: crystals spent so far and what they bought. Spendable crystals = lifetime crystals - spent.
+    this.spent = 0;
+    this.owned = new Set();
     try {
       const saved = JSON.parse(localStorage.getItem(KEY) || 'null');
       if (saved) this.merge(saved);
     } catch { /* storage unavailable or corrupt: start fresh */ }
   }
 
-  /** Takes the larger of each stat and the union of unlocks (from storage or the leaderboard row). */
+  /** Takes the larger of each stat and of the crystals spent, and the union of unlocks and purchases. */
   merge(data) {
     for (const s of STATS) this.stats[s] = Math.max(this.stats[s], Number(data?.stats?.[s]) || 0);
     for (const id of data?.unlocked || []) if (typeof id === 'string') this.unlocked.add(id);
+    this.spent = Math.max(this.spent, Number(data?.spent) || 0);
+    for (const id of data?.owned || []) if (typeof id === 'string') this.owned.add(id);
+  }
+
+  /** Crystals available to spend in the shop. */
+  get balance() {
+    return Math.max(0, this.stats.crystals - this.spent);
+  }
+
+  /** Free items (no price) are everyone's; priced ones once bought. */
+  owns(item) {
+    return !item.price || this.owned.has(item.id);
+  }
+
+  /** Buys a priced item for its price in crystals; false if it can't be afforded or is already owned. */
+  buy(item) {
+    if (this.owns(item) || this.balance < item.price) return false;
+    this.spent += item.price;
+    this.owned.add(item.id);
+    return true;
   }
 
   add(stat, n = 1) {
@@ -37,7 +60,7 @@ export class Progress {
   }
 
   toJSON() {
-    return { stats: { ...this.stats }, unlocked: [...this.unlocked] };
+    return { stats: { ...this.stats }, unlocked: [...this.unlocked], spent: this.spent, owned: [...this.owned] };
   }
 
   isUnlocked(m) {

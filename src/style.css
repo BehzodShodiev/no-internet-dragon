@@ -117,6 +117,34 @@ kbd {
 }
 
 #btn-sound .off, #btn-sound.muted .on { display: none; }
+#btn-music .off, #btn-music.muted .on { display: none; }
+#btn-music.muted .off { display: block; }
+
+/* crystal shop: locked swatches carry a gem, the balance sits beside them, a buy button below */
+.skin-sw.locked { position: relative; filter: saturate(0.55) brightness(0.8); }
+.skin-sw.locked::after {
+  content: ''; position: absolute; right: -4px; bottom: -4px; width: 9px; height: 12px;
+  background: linear-gradient(160deg, #d8fff1, var(--crystal) 45%, #13a374);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.skin-sw.locked[aria-checked='true'] { filter: none; }
+.wallet {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border-radius: 10px;
+  background: rgba(77, 255, 184, 0.08); border: 1px solid rgba(77, 255, 184, 0.25);
+  font: 400 10px/1 var(--pixel); color: var(--crystal); white-space: nowrap;
+}
+.skin-buy {
+  display: inline-flex; align-items: center; gap: 7px; margin: 0 0 14px; padding: 8px 14px; border-radius: 12px;
+  border: none; background: var(--crystal); color: #062a1d; font: 700 13px/1 var(--ui); cursor: pointer;
+  box-shadow: 0 4px 18px rgba(77, 255, 184, 0.3); pointer-events: auto;
+}
+.skin-buy .gem { filter: none; background: #0b3d2a; }
+.skin-buy.short { background: rgba(255, 255, 255, 0.1); color: var(--ink-dim); box-shadow: none; cursor: default; }
+.skin-buy.short .gem { background: linear-gradient(160deg, #d8fff1, var(--crystal) 45%, #13a374); }
+.skin-buy[hidden] { display: none; }
+.over-shop { display: flex; align-items: center; gap: 10px; margin-top: -12px; pointer-events: auto; }
+.over-shop .skin-buy { margin: 0; }
+#hud:not(.menu) .wallet { display: none; }
 #btn-sound.muted .off { display: block; }
 #btn-pause .r, #btn-pause.paused .p { display: none; }
 #btn-pause.paused .r { display: block; }
@@ -383,7 +411,7 @@ kbd {
 .tbtn.smash { width: 66px; height: 66px; color: #ffc27a; }
 .tbtn.pressed { background: rgba(255, 255, 255, 0.3); transform: scale(0.95); }
 
-/* ---------------------------------------------------------------- title screen (Chrome offline page homage) */
+/* ---------------------------------------------------------------- title screen */
 #title-screen {
   position: fixed;
   inset: 0;

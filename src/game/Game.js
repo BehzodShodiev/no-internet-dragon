@@ -298,16 +298,54 @@ export class Game {
   selectSkin(index) {
     const m = this.monster.skins ? this.monster : MONSTERS[0];
     index = (index + m.skins.length) % m.skins.length;
-    if (m.id === 'kaiju') {
-      this.skinIndex = index;
-      store.set('dragon.skin', m.skins[index].id);
-    } else {
-      this.skinIdx[m.id] = index;
-      store.set(`dragon.skin.${m.id}`, m.skins[index].id);
-    }
+    const k = m.skins[index];
+    const owned = this.progress.owns(k);
+    if (m.id === 'kaiju') this.skinIndex = index;
+    else this.skinIdx[m.id] = index;
+    // a shop skin not bought yet is tried on (shown, not saved) until it's bought or a run starts
+    if (owned) store.set(m.id === 'kaiju' ? 'dragon.skin' : `dragon.skin.${m.id}`, k.id);
+    this.trySkin = owned ? null : m.id;
     if (m !== this.monster) { this.selectMonster(m.id); return; }
     this.hud.setSkin(index);
     this._applyLook();
+  }
+
+  /** Puts a tried-on (not bought) shop skin back to the monster's saved skin. */
+  _dropTrySkin() {
+    if (!this.trySkin) return;
+    const m = MONSTERS.find((x) => x.id === this.trySkin);
+    this.trySkin = null;
+    const saved = store.get(m.id === 'kaiju' ? 'dragon.skin' : `dragon.skin.${m.id}`, '');
+    const i = Math.max(0, m.skins.findIndex((k) => k.id === saved && this.progress.owns(k)));
+    if (m.id === 'kaiju') this.skinIndex = i;
+    else this.skinIdx[m.id] = i;
+    if (this.monster === m) { this.hud.setSkin(i); this._applyLook(); }
+  }
+
+  /** Buys the shop skin being tried on, for crystals. */
+  buySkin() {
+    const m = this.monster;
+    if (!m.skins || (this.state !== 'title' && this.state !== 'over')) return;
+    const i = this._skinIndexOf(m), k = m.skins[i];
+    if (this.progress.owns(k)) return;
+    this.audio.init();
+    if (!this.progress.buy(k)) {
+      this.audio.denied();
+      this.hud.toast(`${k.name} costs ${k.price} crystals: ${k.price - this.progress.balance} more to go`, 2400);
+      return;
+    }
+    this.progress.save();
+    this.board.syncProgress(this.progress.toJSON());
+    this.selectSkin(i); // now owned: saved as this monster's skin
+    this._refreshShop();
+    this.audio.ui('open');
+    this.audio.music?.stinger('unlock');
+    this.hud.toast(`${k.name} is yours!`, 2200);
+  }
+
+  /** The crystal balance and which shop skins are owned, on the swatches and the buy button. */
+  _refreshShop() {
+    this.hud.setShop((k) => this.progress.owns(k), this.progress.balance);
   }
 
   /** The chosen skin index of a monster with skins. */
@@ -332,6 +370,7 @@ export class Game {
   selectMonster(id, preview = false) {
     const m = MONSTERS.find((x) => x.id === id);
     if (!m || (!this.progress.isUnlocked(m) && !preview)) return;
+    if (this.trySkin && this.trySkin !== m.id) this._dropTrySkin();
     const d = this.dragons[m.id] || this._buildMonster(m);
     for (const k in this.dragons) this.dragons[k].group.visible = k === m.id;
     d.group.position.copy(this.dragon.group.position);
@@ -342,7 +381,7 @@ export class Game {
     this._applyLook();
     this.hud.setMonster(m, this.preview);
     if (m.skins) {
-      if (this.hud.skins !== m.skins) this.hud.buildSkins(m.skins, this._onSkinPick);
+      if (this.hud.skins !== m.skins) { this.hud.buildSkins(m.skins, this._onSkinPick); this._refreshShop(); }
       this.hud.setSkin(this._skinIndexOf(m));
     }
     this.hud.renderMonsters(this.progress, m.id, this.board.isOwner);
@@ -517,6 +556,7 @@ export class Game {
     this.hud.setScore(0, 0);
     this.hud.setView(this.rig.mode);
     this.hud.setMuted(this.audio.muted);
+    this.hud.setMusicOn(this.audio.musicOn);
     window.addEventListener('resize', () => { this.renderer.resize(); this._pausedDrawn = false; });
     // Lifetime stats count during a run; keep them if the tab is hidden or closed mid-run.
     const saveProgress = () => { if (!this.sim) this.progress.save(); };
@@ -693,12 +733,17 @@ export class Game {
     });
     this._onSkinPick = (i) => { this.audio.init(); if (this.state === 'title' || this.state === 'over') this.selectSkin(i); };
     this.hud.buildSkins(SKINS, this._onSkinPick);
+    this._refreshShop();
+    this.hud.onBuy = () => this.buySkin();
+    this.hud.bindShop();
+    inp.on('music', () => this.toggleMusic());
     inp.on('board', () => this.toggleBoard());
 
     const click = (id, fn) => document.getElementById(id).addEventListener('click', (e) => { e.stopPropagation(); fn(); e.currentTarget.blur(); });
     click('btn-view', () => this.toggleView());
     click('btn-sound', () => this.toggleMute());
     click('btn-quality', () => this._cycleQuality());
+    click('btn-music', () => this.toggleMusic());
     click('btn-pause', () => this.togglePause());
     click('btn-fullscreen', () => {
       if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
@@ -746,6 +791,7 @@ export class Game {
   }
 
   _startIntro() {
+    this._dropTrySkin();
     this.state = 'intro';
     this.hud.setMenu(false);
     this.introT = 0;
@@ -894,6 +940,13 @@ export class Game {
     this.tips.viewHints = (this.tips.viewHints || 0) + 1;
     store.set('dragon.tips', JSON.stringify(this.tips));
     this.hud.toast(this.coarseMQ.matches ? 'Tap 3D at the top to see the run in 3D' : 'Press V to switch to the 3D view', 3600);
+  }
+
+  toggleMusic() {
+    this.audio.init();
+    this.audio.setMusic(!this.audio.musicOn);
+    this.hud.setMusicOn(this.audio.musicOn);
+    this.hud.toast(this.audio.musicOn ? 'Music on' : 'Music off · sound effects stay on', 1600);
   }
 
   toggleMute() {
@@ -1683,6 +1736,7 @@ export class Game {
       dt = realDt * this.timeScale;
       if (this.dieT > 0.85) {
         this.state = 'over';
+        this._refreshShop();
         this.overT = 0;
         const stats = `${this.level.short} · ${this.smashes} smashed · ${this.crystalsRun} crystals · best ×${this.bestMult}`
           + (this.bossesDowned ? ` · ${this.bossesDowned} gunship${this.bossesDowned > 1 ? 's' : ''} down` : '')
