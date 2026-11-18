@@ -27,6 +27,7 @@ import { Environment } from '../world/Environment.js';
 import { Scenery } from '../world/Scenery.js';
 import { Particles, BreathBeam, Footprints } from '../world/Particles.js';
 import { Teeth } from '../world/Teeth.js';
+import { Shards } from '../world/Shards.js';
 import { ContactShadows } from '../world/ContactShadows.js';
 import { runAOQueue } from '../gfx/ao.js';
 import * as TX from '../gfx/textures.js';
@@ -44,7 +45,7 @@ export const CFG = {
   fastFall: 2.8,
   scoreRate: 0.75,
   dayLength: 1500, // distance points per full day/night cycle
-  breathFill: 70, // distance points to fully charge the atomic breath
+  breathFill: 70, // distance points to fully charge the breath
   breathStart: 0.6, // every run starts mostly charged, so the first breath comes within seconds
   breathTime: 1.3,
   breathRange: 34,
@@ -359,7 +360,9 @@ export class Game {
     this.scoreK = this.skin.score ?? this.skin.hitX;
     this.dragon.setSkin(this.skin);
     this.beam.setColors(this.skin.beam);
+    this.beam.setStyle(this.monster.beam === 'prism');
     for (const b of this.sideBeams) b.setColors(this.skin.beam);
+    this.shards.setColor(this.skin.spark);
     this.teeth?.setStyle(this.skin.model);
     // the breath's own colour (its sheath, normalised): scorch marks and the impact light use it
     const [r, g, b] = this.skin.beam[0], m = Math.max(r, g, b);
@@ -527,11 +530,13 @@ export class Game {
     this.sparks = new Particles(900, tex.dot, { additive: true });
     scene.add(this.dust.points, this.sparks.points);
     this.beam = new BreathBeam();
-    // the Golden Hydra breathes from all three heads: two extra beams (without their own lights)
+    // the Jade Hydra breathes from all three heads: two extra beams (without their own lights)
     this.sideBeams = [new BreathBeam(), new BreathBeam()];
     for (const b of this.sideBeams) scene.add(b.mesh);
     scene.add(this.beam.mesh, this.beam.light);
     this.teeth = new Teeth(scene); // the Rex's Tooth Quake
+    this.shards = new Shards(200); // thrown off by the Kaiju's prism beam
+    scene.add(this.shards.mesh);
     this.contact = new ContactShadows(scene, tex.dot);
     this.footprints = new Footprints(tex.footprint);
     scene.add(this.footprints.mesh);
@@ -632,8 +637,10 @@ export class Game {
     // empty particle systems and decals are skipped by the renderer, so give them something to draw
     this.dust.emit(4, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1);
     this.sparks.emit(4, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1);
+    this.shards.emit(4, 1, 0, 0, 0, 0, 1, 1);
     this.dust.update(0, 0);
     this.sparks.update(0, 0);
+    this.shards.update(0, 0);
     this.footprints.add(4, 0);
     this.footprints.update(0, 0);
     this.env.update(0, this.camera, 0, this.rig.blend);
@@ -677,6 +684,7 @@ export class Game {
     for (const b of this.sideBeams) b.mesh.visible = false;
     this.dust.clear();
     this.sparks.clear();
+    this.shards.clear();
     this.footprints.clear();
   }
 
@@ -817,6 +825,7 @@ export class Game {
     this.hud.setMenu(false);
     this.dust.clear();
     this.sparks.clear();
+    this.shards.clear();
     this.footprints.clear();
     this.teeth.clear();
     this._resetRun();
@@ -838,6 +847,7 @@ export class Game {
     this.hud.show('over', false);
     this.dust.clear();
     this.sparks.clear();
+    this.shards.clear();
     this.footprints.clear();
     this._resetRun();
     this.pace = 0;
@@ -940,6 +950,12 @@ export class Game {
     this.tips.viewHints = (this.tips.viewHints || 0) + 1;
     store.set('dragon.tips', JSON.stringify(this.tips));
     this.hud.toast(this.coarseMQ.matches ? 'Tap 3D at the top to see the run in 3D' : 'Press V to switch to the 3D view', 3600);
+  }
+
+  /** The monster's breath attack in sentence case, for tips: 'Prism beam', 'Tooth quake'. */
+  _attackLabel() {
+    const n = this.monster.attackName || 'BREATH';
+    return n[0] + n.slice(1).toLowerCase();
   }
 
   toggleMusic() {
@@ -1093,7 +1109,7 @@ export class Game {
       // tell the player why nothing happened instead of silently ignoring the key
       this.audio.denied();
       this.hud.chargeDenied();
-      this.hud.toast(`${this.monster.attack === 'teeth' ? 'Tooth quake' : 'Atomic breath'} charging · ${Math.floor(this.charge * 100)}%`, 1100);
+      this.hud.toast(`${this._attackLabel()} charging · ${Math.floor(this.charge * 100)}%`, 1100);
       return;
     }
     this.charge = 0;
@@ -1807,7 +1823,7 @@ export class Game {
         this.charge = Math.min(1, this.charge + (this.pace * dt * CFG.scoreRate * boost) / CFG.breathFill);
         if (this.charge >= 1) {
           this.audio.charged();
-          if (!this.toldReady) this.hud.toast(this.boss.active ? 'Breath ready — fire at the gunship! (F)' : 'Atomic breath ready — press F');
+          if (!this.toldReady) this.hud.toast(this.boss.active ? 'Breath ready — fire at the gunship! (F)' : `${this._attackLabel()} ready — press F`);
           this.toldReady = true;
         }
       }
@@ -1882,7 +1898,7 @@ export class Game {
       }
     }
 
-    // atomic breath
+    // the breath (prism beam, fire, wing dust or tooth quake)
     let breathAmt = 0;
     this.breathGlow = 0;
     if (this.breathT > 0) {
@@ -1911,7 +1927,8 @@ export class Game {
       // against the gunship the beam tilts up to meet it
       const boss = this.boss;
       const aim = boss.active ? Math.min(0.4, Math.max(-0.06, Math.atan2(boss.y - mouth.y, boss.x - mouth.x))) : -0.06;
-      this.beam.set(mouth, teeth ? 0 : len, 0.55 + 0.15 * Math.sin(this.time * 40), teeth ? 0 : breathAmt, this.time, aim);
+      const prism = this.monster.beam === 'prism';
+      this.beam.set(mouth, teeth ? 0 : len, prism ? 0.5 + 0.03 * Math.sin(this.time * 25) : 0.55 + 0.15 * Math.sin(this.time * 40), teeth ? 0 : breathAmt, this.time, aim);
       const nSide = this.dragon.getSideMouths(this._sideMouths);
       this.sideBeams.forEach((b, i) => b.set(this._sideMouths[i], i < nSide ? len * 0.85 : 0, 0.4 + 0.1 * Math.sin(this.time * 33 + i),
         i < nSide ? breathAmt : 0, this.time, aim + (i ? 0.05 : -0.05)));
@@ -1942,7 +1959,15 @@ export class Game {
           if (teeth) this.teeth.erupt(b[0], 0, boss.y + 0.6, { hold: 0.9 });
         }
       }
-      for (let i = 0; i < (teeth ? 0 : 4); i++) {
+      // the prism beam throws off crystal shards along its length
+      if (prism && breathAmt > 0.2) {
+        for (let i = 0; i < 2; i++) {
+          const d = Math.random() * len;
+          this.shards.emit(mouth.x + d * Math.cos(aim), mouth.y + d * Math.sin(aim) + (Math.random() - 0.5) * 0.5, mouth.z + (Math.random() - 0.5) * 0.6,
+            12 + Math.random() * 10, (Math.random() - 0.4) * 4, (Math.random() - 0.5) * 5, 0.35 + Math.random() * 0.25, 0.9 + Math.random() * 0.7);
+        }
+      }
+      for (let i = 0; i < (teeth ? 0 : prism ? 2 : 4); i++) {
         const d = Math.random() * len;
         this.sparks.emit(
           mouth.x + d * Math.cos(aim), mouth.y + d * Math.sin(aim) + (Math.random() - 0.5) * 0.6, mouth.z + (Math.random() - 0.5) * 0.6,
@@ -1955,6 +1980,12 @@ export class Game {
         const tx = mouth.x + len * Math.cos(aim), ty = mouth.y + len * Math.sin(aim);
         const ground = ty < 1.0;
         const sy = ground ? 0.1 : ty;
+        if (prism) {
+          for (let i = 0; i < 2; i++) {
+            this.shards.emit(tx, sy + 0.2, mouth.z + (Math.random() - 0.5) * 0.8, -4 + Math.random() * 7, 3 + Math.random() * 6, (Math.random() - 0.5) * 6,
+              0.6 + Math.random() * 0.4, 1 + Math.random() * 0.8, 18, ground);
+          }
+        }
         for (let i = 0; i < 3; i++) {
           this.sparks.emit(
             tx, sy, mouth.z + (Math.random() - 0.5) * 0.8,
@@ -2154,6 +2185,7 @@ export class Game {
     this.sparks.update(dt, ground);
     this.footprints.update(dt, this.speed);
     this.teeth.update(dt, this.state === 'over' ? 0 : this.speed);
+    this.shards.update(dt, this.state === 'over' ? 0 : this.speed);
     if (this.state !== 'loading') runAOQueue(this.state === 'running' ? 2 : 6); // baked shading, a slice per frame
     this._contactShadows();
     const pxScale = this.renderer.pixelHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));

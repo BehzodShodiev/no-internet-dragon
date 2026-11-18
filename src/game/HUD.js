@@ -312,8 +312,8 @@ export class HUD {
   /** Builds the Monsters panel cards; onPick(id) selects, onPreview(id) is the owner's locked preview. */
   buildMonsters(monsters, onPick, onPreview) {
     const art = {
-      kaiju: 'linear-gradient(135deg, #2e3530, #3cc8ff)',
-      ghidorah: 'linear-gradient(135deg, #8a5a14, #ffd166)',
+      kaiju: 'linear-gradient(135deg, #2e3530 40%, #2dffb0)',
+      ghidorah: 'linear-gradient(135deg, #10302a, #2a6650 55%, #b3c294)',
       rex: 'linear-gradient(135deg, #2c3618, #5c6b2e 50%, #c4925a)',
       mothra: 'radial-gradient(circle at 80% 22%, #9fe8ff 0 5%, #ffd65c 6% 9%, #1a0e08 10% 13%, transparent 14%), linear-gradient(135deg, #5c3418, #e08a26 55%, #f6c44a)',
     };
@@ -377,7 +377,7 @@ export class HUD {
   /** Shows the current monster's name, and its skin swatches if it has skins. */
   setMonster(m, preview) {
     for (const id of ['monster-name', 'monster-name-over']) $(id).textContent = m.name + (preview ? ' (preview)' : '');
-    $('charge').querySelector('.label').firstChild.textContent = `${m.attackName || 'ATOMIC BREATH'} `;
+    $('charge').querySelector('.label').firstChild.textContent = `${m.attackName || 'BREATH'} `;
     for (const id of ['skins', 'over-skins']) $(id).hidden = !m.skins;
     if (!m.skins) $('skin-info').textContent = m.note;
   }

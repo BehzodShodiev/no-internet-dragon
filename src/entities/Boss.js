@@ -1,5 +1,5 @@
 // The gunship boss: flies in, hovers ahead of the dragon and fires telegraphed missile volleys.
-// Only the atomic breath can bring it down.
+// Only the breath attack can bring it down.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { sweep, mergeLoose, setVertexColor } from '../gfx/geometry.js';

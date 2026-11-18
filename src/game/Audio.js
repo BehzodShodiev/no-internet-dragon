@@ -769,7 +769,7 @@ export class AudioEngine {
     [659.25, 987.77].forEach((f, i) => this._tone('triangle', f, t + i * 0.09, 0.005, 0.1, 0.3));
   }
 
-  /** the Hydra's gravity beams: twin buzzing saws chopped by a fast tremolo, with crackles. */
+  /** the Hydra's triple fire: twin buzzing saws chopped by a fast tremolo, with crackles. */
   _gravityBeam(duration) {
     const ctx = this.ctx, t = ctx.currentTime;
     const out = ctx.createGain();

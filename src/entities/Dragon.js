@@ -1,8 +1,9 @@
-// Procedural, skinned atomic lizard. Built in "design units" and scaled into world units.
+// Procedural, skinned giant lizards (the Kaiju, the Jade Hydra, the Rex). Built in "design units" and scaled into world units.
 // Legs are driven by analytic 2-bone IK so feet plant on the ground while running.
 import * as THREE from 'three';
 import { sweep, mergeGeometries } from '../gfx/geometry.js';
-import { noise3, curvedSpike, spikeColors, plateGeometry, plateColors } from './DragonHD.js';
+import { noise3, curvedSpike, spikeColors } from './DragonHD.js';
+import { crystalCluster } from './BackCrystals.js';
 import { mulberry32 } from '../gfx/noise.js';
 import { voxelize } from './Voxel.js';
 
@@ -55,10 +56,10 @@ const sgnPow = (v, p) => Math.sign(v) * Math.abs(v) ** p;
 
 export class Dragon {
   /**
-   * variant: 'kaiju' (the atomic lizard), 'ghidorah' (the Golden Hydra: three heads, two tails, wings) or 'rex'
+   * variant: 'kaiju' (the crystal-backed lizard), 'ghidorah' (the Jade Hydra: three heads, wings, horns) or 'rex'
    * (big head, tiny arms, no plates; with a second, voxel look that its Pixel skin shows).
    * detail: 'std', or 'hd' for the Very High model (Kaiju only): same skeleton, animation and hitboxes,
-   * with real anatomy, a carved head and bony plates.
+   * with real anatomy, a carved head and more back crystals.
    */
   constructor(tex, variant = 'kaiju', detail = 'std') {
     this.variant = variant;
@@ -212,11 +213,13 @@ export class Dragon {
     grad.needsUpdate = true;
 
     this.plateUniforms = { uWavePos: { value: -1 }, uWaveAmp: { value: 0 }, uGlow: { value: 0.35 } };
+    // the back crystals: glassy, flat-faceted, lit from inside (brightest toward the tips)
     this.plateMat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      roughness: 0.42,
+      roughness: 0.16,
       metalness: 0.05,
-      emissive: new THREE.Color(0x3cc8ff),
+      flatShading: true,
+      emissive: new THREE.Color(0x2dffb0),
       emissiveMap: grad,
       emissiveIntensity: 1,
     });
@@ -230,8 +233,10 @@ export class Dragon {
         .replace(
           '#include <emissivemap_fragment>',
           `#include <emissivemap_fragment>
-          float wave = exp(-pow((vPlateT - uWavePos) * 7.0, 2.0));
-          totalEmissiveRadiance *= uGlow + uWaveAmp * wave;`
+          // each cluster twinkles on its own phase (uWavePos is the monster's clock here)
+          float ph = fract(sin(vPlateT * 917.31) * 43758.5453);
+          float twinkle = pow(0.5 + 0.5 * sin(uWavePos * 7.0 + ph * 6.2832), 3.0);
+          totalEmissiveRadiance *= uGlow + uWaveAmp * (0.3 + 0.7 * twinkle);`
         );
     };
     this.eyeMat = new THREE.MeshStandardMaterial({
@@ -252,10 +257,12 @@ export class Dragon {
   _buildMeshes() {
     const tk = this.tk;
     const rex = this.variant === 'rex';
-    // the Rex: olive hide with dark tiger stripes over the back and a warm tan belly
-    const backCol = new THREE.Color(rex ? 0x3a4622 : 0x384038);
-    const midCol = new THREE.Color(rex ? 0x5c6b2e : 0x4a524a);
-    const bellyCol = new THREE.Color(rex ? 0xc4925a : 0xa39883);
+    // the Rex: olive hide with dark tiger stripes over the back and a warm tan belly; the Hydra: deep jade
+    // with a pale sage belly
+    const hydra = this.variant === 'ghidorah';
+    const backCol = new THREE.Color(rex ? 0x3a4622 : hydra ? 0x173d31 : 0x384038);
+    const midCol = new THREE.Color(rex ? 0x5c6b2e : hydra ? 0x2a6650 : 0x4a524a);
+    const bellyCol = new THREE.Color(rex ? 0xc4925a : hydra ? 0xb3c294 : 0xa39883);
     const stripe = (t, c) => (rex ? 1 - 0.55 * smooth(-0.2, 0.5, c) * smooth(0.25, 0.75, Math.sin(t * 92)) * smooth(0.04, 0.2, t) : 1);
     const mouthCol = new THREE.Color(0x4a1414);
     const gumCol = new THREE.Color(0x7a2a2a);
@@ -269,11 +276,8 @@ export class Dragon {
       section: (t, a, out) => {
         const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
         const c = Math.cos(a), s = Math.sin(a);
-        // the Golden Hydra's tail splits in two: this one bends to +z, the extra tail to -z
-        const split = this.variant === 'ghidorah' ? smooth(tk[4], tk[1], t) : 0;
-        const thin = 1 - 0.3 * split;
-        out.x = s * rz * thin * (1 - 0.12 * Math.max(0, c)) + split * 0.55;
-        out.y = c * ry * thin * (c < 0 ? 1.04 : 1);
+        out.x = s * rz * (1 - 0.12 * Math.max(0, c));
+        out.y = c * ry * (c < 0 ? 1.04 : 1);
       },
       color: (t, a, out) => {
         const c = Math.cos(a);
@@ -396,7 +400,7 @@ export class Dragon {
     const rig = (g, bone) => { if (bone >= 0) skinRigid(g, bone); return g; };
 
     // Builds a whole head (skull, jaw, teeth, eyes, optional crown of horns) through toWorld.
-    // Bones < 0 give a rigid head (the Golden Hydra's side heads ride on their own necks).
+    // Bones < 0 give a rigid head (the Jade Hydra's side heads ride on their own necks).
     const makeHead = (toWorld, headBone, jawBone, horns = false) => {
     // skull: rounded cranium sinking into the neck, the brow as its crest, a short blunt muzzle
     const SX0 = -0.44, SX1 = 1.4;
@@ -482,29 +486,51 @@ export class Dragon {
       eyes.push(rig(toWorld(e), headBone));
     }
 
-    // a crown of horns sweeping back from the top of the skull
+    // horns: a long pair sweeping back from behind the brow, curling up at the tips, and a short pair below
     if (horns) {
-      for (const [x, z, len] of [[-0.32, 0, 0.6], [-0.2, 0.24, 0.5], [-0.2, -0.24, 0.5], [0.0, 0.16, 0.36], [0.0, -0.16, 0.36]]) {
-        const hn = new THREE.ConeGeometry(0.06, len, 8).translate(0, len / 2, 0).rotateZ(1.05).rotateX(-z * 1.4);
-        hn.translate(x, mouthY(x) + profile(sH[0], sH[1], x) * 0.92, z);
-        teeth.push(rig(toWorld(hn), headBone));
+      for (const s of [1, -1]) {
+        for (const [x, yk, z, len, r, pitch, splay] of [[0.02, 0.9, 0.2, 0.78, 0.07, 1.25, 0.32], [-0.18, 0.45, 0.34, 0.34, 0.05, 1.5, 0.55]]) {
+          const hn = curvedSpike(len, r, 0.32, 8, 6).rotateZ(pitch).rotateY(s * splay);
+          hn.translate(x, mouthY(x) + profile(sH[0], sH[1], x) * yk, z * s);
+          teeth.push(rig(toWorld(hn), headBone));
+        }
       }
     }
     return { skull, jaw, teeth, eyes };
     };
     const { skull, jaw, teeth, eyes } = makeHead(mainToWorld, B.head, B.jaw, this.variant === 'ghidorah');
 
-    // ---------------- the Golden Hydra: side necks and heads, second tail, wings ----------------
-    if (this.variant === 'ghidorah') this._buildGhidorah({ makeHead, tilt, sweepColor: midCol });
+    // ---------------- the Jade Hydra: side necks and heads, wings, a ridge of spines ----------------
+    if (hydra) {
+      this._buildGhidorah({ makeHead, tilt, backCol, midCol, bellyCol });
+      // short curved spines from the tail to the back of the neck, tips raked back
+      const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3(), Z = V(0, 0, 1);
+      const a0 = tk[0] + 0.03, a1 = tk[8], n = 26;
+      for (let i = 0; i < n; i++) {
+        const k = i / (n - 1), t = a0 + (a1 - a0) * k;
+        this.curve.getPointAt(t, P);
+        this.curve.getTangentAt(t, T);
+        N.crossVectors(Z, T).normalize();
+        const len = 0.1 + 0.24 * Math.sin(Math.min(1, k * 1.15) * Math.PI) ** 0.8;
+        const g = curvedSpike(len, len * 0.32, -0.45, 6, 4);
+        g.rotateZ(Math.atan2(T.y, T.x));
+        g.translate(P.x + N.x * profile(tk, RY, t) * 0.9, P.y + N.y * profile(tk, RY, t) * 0.9, P.z);
+        const sk = this.spineSkin(t), m = g.attributes.position.count;
+        const si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
+        for (let j = 0; j < m; j++) { si[j * 4] = sk[0]; si[j * 4 + 1] = sk[1]; sw[j * 4] = sk[2]; sw[j * 4 + 1] = sk[3]; }
+        g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+        g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+        teeth.push(g);
+      }
+    }
 
-    // ---------------- dorsal plates (not on the Hydra) ----------------
-    const plates = this.variant === 'ghidorah' || rex ? null : this._buildPlates();
+    // ---------------- back crystals (the Kaiju only) ----------------
+    const plates = this.variant === 'kaiju' ? this._buildCrystals() : null;
 
     const legs = [legGeo(B.thighR, HIP_Z), legGeo(B.thighL, -HIP_Z)];
     // the Pixel skin: the same model rebuilt from cubes (before the parts are merged)
     const pixel = rex ? this._voxelModel([body, ...legs, ...armGeos, skull, jaw], [...toeGeos], teeth, clawGeos, eyes) : null;
-    const skinGeo = mergeGeometries([body, ...legs, ...toeGeos, ...armGeos, skull, jaw,
-      ...(this.extraTail ? [this.extraTail] : [])].map(clean), false);
+    const skinGeo = mergeGeometries([body, ...legs, ...toeGeos, ...armGeos, skull, jaw].map(clean), false);
     const keratinGeo = mergeGeometries([...teeth, ...clawGeos].map(clean), false);
     const eyeGeo = mergeGeometries(eyes.map(clean), false);
 
@@ -567,7 +593,7 @@ export class Dragon {
    * hitboxes), with anatomy and surface: haunch and shoulder masses, a dorsal keel, banded belly plates
    * and throat folds; muscled legs with heavy clawed toes; real arms and four-fingered hands; a carved
    * head with brows, sockets, lidded slit-pupil eyes, nostrils, curved teeth and a tongue; mottled
-   * colouring; thick, ridged bone plates.
+   * colouring; more, finer back crystals.
    */
   _buildMeshesHD() {
     const tk = this.tk;
@@ -844,8 +870,8 @@ export class Dragon {
       }
     }
 
-    // ---------------- dorsal plates ----------------
-    const plates = this._buildPlatesHD();
+    // ---------------- back crystals ----------------
+    const plates = this._buildCrystals(true);
 
     const skinGeo = mergeGeometries(skinGeos.map(clean), false);
     const skinMesh = new THREE.SkinnedMesh(skinGeo, this.skinMat);
@@ -869,73 +895,20 @@ export class Dragon {
     }
   }
 
-  /** Very High plates: every plate its own shape, thick and ridged, bone-coloured; more of them, down to the tail tip. */
-  _buildPlatesHD() {
-    const tk = this.tk;
-    const geos = [];
-    const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3();
-    const Z = V(0, 0, 1);
-    let seed = 1000;
-    const place = (t, size, lateral, tiltOut, rows = 30) => {
-      const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
-      this.curve.getPointAt(t, P);
-      this.curve.getTangentAt(t, T);
-      N.crossVectors(Z, T).normalize();
-      const g = plateGeometry(++seed, rows);
-      g.scale(size * 0.95, size, 0.8 + size * 0.5);
-      plateColors(g, size, seed);
-      const p = g.attributes.position;
-      g.setAttribute('aPlateT', new THREE.BufferAttribute(new Float32Array(p.count).fill(t), 1));
-      g.rotateX(tiltOut);
-      g.rotateZ(Math.atan2(T.y, T.x));
-      const a = lateral * 0.62;
-      const off = N.clone().multiplyScalar(Math.cos(a) * ry * 0.8).add(Z.clone().multiplyScalar(Math.sin(a) * rz * 0.85));
-      g.translate(P.x + off.x, P.y + off.y, P.z + off.z);
-      const sk = this.spineSkin(t);
-      const si = new Uint16Array(p.count * 4), sw = new Float32Array(p.count * 4);
-      for (let i = 0; i < p.count; i++) { si[i * 4] = sk[0]; si[i * 4 + 1] = sk[1]; sw[i * 4] = sk[2]; sw[i * 4 + 1] = sk[3]; }
-      g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
-      g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
-      geos.push(g);
-    };
-    // small scutes down to the tail tip
-    for (let i = 0; i < 5; i++) place(tk[0] + 0.015 + (tk[1] - 0.03 - tk[0] - 0.015) * (i / 4), 0.14 + 0.03 * i, 0, 0, 14);
-    // central row
-    const t0 = tk[1] - 0.02, t1 = (tk[8] + tk[9]) / 2;
-    const n = 20;
-    for (let i = 0; i < n; i++) {
-      const t = t0 + (t1 - t0) * (i / (n - 1));
-      const k = i / (n - 1);
-      const size = 0.32 + 0.95 * Math.sin(Math.pow(k, 0.85) * Math.PI) ** 1.2 * (k < 0.75 ? 1 : 1 - (k - 0.75) * 1.4);
-      place(t, Math.max(0.25, size * (i % 2 ? 0.94 : 1)), 0, 0);
-    }
-    // two side rows, staggered against the centre
-    const s0 = tk[3], s1 = tk[8];
-    for (let i = 0; i < 11; i++) {
-      const k = i / 10;
-      const t = s0 + (s1 - s0) * k;
-      const size = 0.22 + 0.36 * Math.sin(k * Math.PI);
-      place(t + 0.012, size, 1, 0.5, 20);
-      place(t + 0.012, size, -1, -0.5, 20);
-    }
-    return mergeGeometries(geos.map((g) => {
-      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'aPlateT', 'skinIndex', 'skinWeight'].includes(k)) g.deleteAttribute(k);
-      return g.index ? g.toNonIndexed() : g;
-    }), false);
-  }
-
   /**
-   * the Golden Hydra's extras: two side necks and heads that sway on their own, a split tail and a pair of
-   * wings. The side heads and wings are rigid meshes riding on the chest bone; the extra tail is skinned
-   * to the tail bones like the body. All of it is decoration: the hitbox is the same body as everyone's.
+   * the Jade Hydra's extras: two side necks and heads that sway on their own, and a pair of wings, all rigid
+   * meshes riding on the chest bone. All of it is decoration: the hitbox is the same body as everyone's.
    */
-  _buildGhidorah({ makeHead, tilt }) {
-    const tk = this.tk;
+  _buildGhidorah({ makeHead, tilt, backCol, midCol, bellyCol }) {
     const chest = this.bones[B.chest];
     const chestRest = this.rest[B.chest];
-    const gold = new THREE.Color(0xc8a040);
+    // the side necks get the body's colouring: dark along the top, pale underneath
+    const neckColor = (a, out) => {
+      const c = Math.cos(a);
+      return out.copy(backCol).lerp(midCol, smooth(0.95, 0.1, c) * 0.7).lerp(bellyCol, smooth(0.0, -0.75, c));
+    };
     this.wingMat = new THREE.MeshStandardMaterial({
-      vertexColors: true, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.25, emissive: 0x2a1200,
+      vertexColors: true, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.05, emissive: 0x03140e,
     });
     this.sideHeads = [];
     this.wings = [];
@@ -955,7 +928,7 @@ export class Dragon {
         points: pts,
         segments: 30, radial: 24, uvScale: [1.6, 1.2], curveType: 'catmullrom',
         section: (t, a, out) => { const r = 0.38 - 0.1 * t; out.x = Math.sin(a) * r * 0.92; out.y = Math.cos(a) * r; },
-        color: (t, a, out) => out.copy(gold),
+        color: (t, a, out) => neckColor(a, out),
       });
       const yaw = -0.2 * side; // turned a little outward
       const toWorld = (g) => g.scale(0.86, 0.86, 0.86).applyMatrix4(tilt).rotateY(yaw).translate(H.x, H.y, H.z);
@@ -988,23 +961,6 @@ export class Dragon {
       chest.add(w);
       this.wings.push({ group: w, side });
     }
-
-    // the tail splits in two: the body's tail bends to one side (see the body sweep), this one to the other
-    const split = (t) => smooth(tk[4], tk[1], t);
-    this.extraTail = sweep({
-      points: SPINE.slice(0, 6).map(([x, y]) => V(x, y)),
-      segments: 60, radial: 24, uvScale: [3, 2.5],
-      section: (tl, a, out) => {
-        const t = tl * tk[5];
-        const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
-        const thin = 1 - 0.3 * split(t);
-        out.x = Math.sin(a) * rz * thin - split(t) * 0.55;
-        out.y = Math.cos(a) * ry * thin;
-      },
-      color: (t, a, out) => out.copy(gold),
-      skin: (tl) => this.spineSkin(tl * tk[5]),
-      capStart: true,
-    });
   }
 
   /** A bat wing: a scalloped membrane between finger bones, reaching up, out (+z) and back. */
@@ -1018,7 +974,8 @@ export class Dragon {
       [R, W, F[2]], [R, F[2], M23], [R, M23, F[3]],
     ];
     const pos = [], col = [];
-    const inner = new THREE.Color(0xd9a338), outer = new THREE.Color(0xa8381a), c = new THREE.Color();
+    // a jade membrane, paler near the arm and darkening toward the scalloped edge
+    const inner = new THREE.Color(0x4f9a78), outer = new THREE.Color(0x10302a), c = new THREE.Color();
     for (const t of tris) {
       for (const p of t) {
         pos.push(p.x, p.y, p.z);
@@ -1033,55 +990,33 @@ export class Dragon {
     const bone = (a, b, r) => sweep({
       points: [a, a.clone().lerp(b, 0.5).add(V(0, 0.06, 0)), b], segments: 10, radial: 8, curveType: 'catmullrom',
       section: (t, ang, out) => { const rr = r * (1 - 0.6 * t); out.x = Math.sin(ang) * rr; out.y = Math.cos(ang) * rr; },
-      color: (t, ang, out) => out.set(0xc8a040),
+      color: (t, ang, out) => out.set(0x24503f),
       capEnd: true,
     });
     const bones = mergeGeometries([bone(R, W, 0.09), bone(W, tip, 0.06), ...F.slice(0, 3).map((f) => bone(W, f, 0.045))].map(clean), false);
     return { membrane, bones };
   }
 
-  _buildPlates() {
+  /**
+   * The Kaiju's back crystals (BackCrystals.js): a row of clusters along the spine, biggest over the
+   * shoulders, and two lower rows splaying out to the sides. hd (Very High): more clusters, more facets,
+   * and small ones down to the tail tip. Each cluster carries its place on the spine (aPlateT), which
+   * gives it its own twinkle in the plate shader.
+   */
+  _buildCrystals(hd = false) {
     const tk = this.tk;
-    const outline = [
-      [-0.5, 0], [-0.4, 0.22], [-0.64, 0.3], [-0.36, 0.43], [-0.52, 0.58], [-0.24, 0.64],
-      [-0.32, 0.8], [-0.1, 0.84], [0, 1], [0.1, 0.83], [0.28, 0.78], [0.15, 0.63],
-      [0.4, 0.56], [0.24, 0.43], [0.46, 0.3], [0.34, 0.2], [0.5, 0],
-    ];
-    const shape = new THREE.Shape();
-    outline.forEach(([x, y], i) => {
-      const sx = x - 0.28 * y; // sweep tips backward
-      if (i === 0) shape.moveTo(sx, y - 0.25); else shape.lineTo(sx, y - (i === outline.length - 1 ? 0.25 : 0));
-    });
-    const base = new THREE.ExtrudeGeometry(shape, {
-      depth: 0.06, bevelEnabled: true, bevelThickness: 0.035, bevelSize: 0.035, bevelSegments: 2, steps: 1,
-    });
-    base.translate(0, 0, -0.03);
-    base.computeVertexNormals();
-
-    const rootCol = new THREE.Color(0x2c302d);
-    const tipCol = new THREE.Color(0xa9a596);
     const geos = [];
     const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3();
     const Z = V(0, 0, 1);
-    const place = (t, size, lateral, tiltOut) => {
+    let seed = hd ? 2000 : 1000;
+    const place = (t, size, lateral, tiltOut, extra) => {
       const ry = profile(tk, RY, t), rz = profile(tk, RZ, t);
       this.curve.getPointAt(t, P);
       this.curve.getTangentAt(t, T);
       N.crossVectors(Z, T).normalize();
-      const g = base.clone();
-      g.scale(size * 0.95, size, 1 + size * 0.3);
-      // vertex colors: dark root -> pale tip
+      const g = crystalCluster(++seed, size, { extra, hd });
       const p = g.attributes.position;
-      const col = new Float32Array(p.count * 3);
-      const pt = new Float32Array(p.count);
-      for (let i = 0; i < p.count; i++) {
-        const f = smooth(-0.15 * size, 0.85 * size, p.getY(i));
-        const c = rootCol.clone().lerp(tipCol, f);
-        col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-        pt[i] = t;
-      }
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      g.setAttribute('aPlateT', new THREE.BufferAttribute(pt, 1));
+      g.setAttribute('aPlateT', new THREE.BufferAttribute(new Float32Array(p.count).fill(t), 1));
       g.rotateX(tiltOut);
       g.rotateZ(Math.atan2(T.y, T.x));
       const a = lateral * 0.62;
@@ -1094,29 +1029,28 @@ export class Dragon {
       g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
       geos.push(g);
     };
-    // central row
+    // small single shards down to the tail tip
+    if (hd) for (let i = 0; i < 5; i++) place(tk[0] + 0.015 + (tk[1] - 0.03 - tk[0] - 0.015) * (i / 4), 0.16 + 0.04 * i, 0, 0, 0);
+    // the main row, along the spine
     const t0 = tk[1] - 0.02, t1 = (tk[8] + tk[9]) / 2;
-    const n = 19;
+    const n = hd ? 20 : 17;
     for (let i = 0; i < n; i++) {
       const t = t0 + (t1 - t0) * (i / (n - 1));
       const k = i / (n - 1);
-      const size = 0.32 + 0.95 * Math.sin(Math.pow(k, 0.85) * Math.PI) ** 1.2 * (k < 0.75 ? 1 : 1 - (k - 0.75) * 1.4);
-      place(t, Math.max(0.25, size), 0, 0);
+      const size = 0.34 + 0.9 * Math.sin(Math.pow(k, 0.85) * Math.PI) ** 1.2 * (k < 0.75 ? 1 : 1 - (k - 0.75) * 1.4);
+      place(t, Math.max(0.28, size), 0, 0, size > 0.6 ? (hd ? 3 : 2) : 1);
     }
-    // two side rows
+    // two side rows, staggered against the main one and splaying outward
     const s0 = tk[3], s1 = tk[8];
-    for (let i = 0; i < 9; i++) {
-      const k = i / 8;
-      const t = s0 + (s1 - s0) * k;
-      const size = 0.28 + 0.42 * Math.sin(k * Math.PI);
-      place(t + 0.012, size, 1, 0.42);
-      place(t + 0.012, size, -1, -0.42);
+    const ns = hd ? 11 : 8;
+    for (let i = 0; i < ns; i++) {
+      const k = i / (ns - 1);
+      const t = s0 + (s1 - s0) * k + 0.012;
+      const size = 0.26 + 0.38 * Math.sin(k * Math.PI);
+      place(t, size, 1, 0.55, 1);
+      place(t, size, -1, -0.55, 1);
     }
-    const out = mergeGeometries(geos.map((g) => {
-      for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv', 'color', 'aPlateT', 'skinIndex', 'skinWeight'].includes(k)) g.deleteAttribute(k);
-      return g.index ? g.toNonIndexed() : g;
-    }), false);
-    return out;
+    return mergeGeometries(geos, false);
   }
 
   _anchors() {
@@ -1140,10 +1074,11 @@ export class Dragon {
     this._tmp = new THREE.Vector3();
   }
 
-  setGlow(base, waveAmp, wavePos) {
+  /** base: steady crystal glow; waveAmp: how hard they twinkle on top (the wave position isn't used: crystals twinkle, they don't pulse along the spine). */
+  setGlow(base, waveAmp) {
     this.plateUniforms.uGlow.value = base;
     this.plateUniforms.uWaveAmp.value = waveAmp;
-    this.plateUniforms.uWavePos.value = wavePos;
+    this.plateUniforms.uWavePos.value = this.time;
   }
 
   /** 0 = the skin's own glow, 1 = Kaiju Rage's burning red-orange. */
@@ -1245,7 +1180,7 @@ export class Dragon {
       + 0.65 * this.roar + 0.55 * this.breath + 0.35 * this.dead + 0.8 * this.bite;
     bn[B.jaw].rotation.z = -jawOpen;
 
-    // ---- the Golden Hydra: side heads sway on their own necks, wings beat with the stride ----
+    // ---- the Jade Hydra: side heads sway on their own necks, wings beat with the stride ----
     if (this.sideHeads) {
       for (const { pivot, side } of this.sideHeads) {
         const p2 = time * 1.6 + side * 1.9;
@@ -1299,7 +1234,7 @@ export class Dragon {
       this.lastStance[leg] = inStance;
     }
 
-    // ---- glow (dorsal plates) ----
+    // ---- glow (back crystals) ----
     this.group.updateMatrixWorld(true);
   }
 
@@ -1364,7 +1299,7 @@ export class Dragon {
     return this.anchor.snout.getWorldPosition(target);
   }
 
-  /** World positions of the Golden Hydra's side mouths (empty for one-headed monsters). */
+  /** World positions of the Jade Hydra's side mouths (empty for one-headed monsters). */
   getSideMouths(targets) {
     if (!this.sideHeads) return 0;
     this.sideHeads.forEach((h, i) => h.mouth.getWorldPosition(targets[i]));

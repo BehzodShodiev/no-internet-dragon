@@ -17,7 +17,7 @@ const STAGE = {
  * field: the leaderboard field holding each player's best on this level ('best' predates levels and
  * stays as the Desert board). pace: speed multiplier. tight: extra gap tightening and boss toughness.
  * time: a fixed time of day (cycle 0..1), or null for the normal day/night cycle.
- * breath: how fast the atomic breath charges; bossCharge: its extra boost during the gunship fight;
+ * breath: how fast the breath charges; bossCharge: its extra boost during the gunship fight;
  * rageCrystals: crystals to fill Kaiju Rage. Harder levels make you earn both.
  */
 export const LEVELS = [

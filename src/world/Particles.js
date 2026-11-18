@@ -1,4 +1,4 @@
-// GPU point-sprite particle system (dust, sparks) + the atomic breath beam + footprint decals.
+// GPU point-sprite particle system (dust, sparks) + the breath beam + footprint decals.
 import * as THREE from 'three';
 
 export class Particles {
@@ -112,39 +112,55 @@ export class Particles {
   }
 }
 
-/** Glowing beam for the atomic breath. Length is set every frame. */
+/**
+ * Glowing beam for the breath. Length is set every frame. Two looks (setStyle): a flowing beam (the
+ * Hydra's fire, the Moth Queen's dust), or the Kaiju's prism beam: six-sided like a crystal, twisting as it
+ * goes, with bright seams, rings of light running out along it and a rainbow fringe on the turned faces.
+ */
 export class BreathBeam {
   constructor() {
     const g = new THREE.CylinderGeometry(1, 1, 1, 24, 32, true);
     g.rotateZ(-Math.PI / 2);
     g.translate(0.5, 0, 0);
     this.uniforms = {
-      uTime: { value: 0 }, uIntensity: { value: 0 }, uLen: { value: 10 },
+      uTime: { value: 0 }, uIntensity: { value: 0 }, uLen: { value: 10 }, uPrism: { value: 0 },
       // breath colours (HDR), set by the dragon's skin: the outer flame and the white-hot core
       uColA: { value: new THREE.Vector3(0.1, 0.45, 1.6) }, uColB: { value: new THREE.Vector3(1.4, 2.2, 3.2) },
     };
     const mat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
       vertexShader: /* glsl */ `
-        uniform float uTime; uniform float uLen;
-        varying vec2 vUv; varying float vView;
+        uniform float uTime; uniform float uLen; uniform float uPrism;
+        varying vec2 vUv; varying float vView; varying vec3 vPos;
         void main() {
           vUv = uv;
           vec3 p = position;
           float along = p.x;
           // narrow where it leaves the jaws, then flaring out
           float r = mix(0.16, 1.0, smoothstep(0.0, 0.2, along));
-          float wob = 1.0 + 0.18 * sin(along * uLen * 1.3 - uTime * 40.0) + 0.1 * sin(along * uLen * 3.1 + uTime * 23.0);
-          p.yz *= r * wob;
+          if (uPrism > 0.5) {
+            // a hexagonal cross-section (the 24 radial segments put a vertex on every corner, so the faces
+            // stay flat), twisting along the beam, swelling where each ring of light passes
+            float f = fract(uv.x * 6.0);
+            float hex = 0.8660254 / cos((f - 0.5) * 1.0471976);
+            float tw = along * uLen * 0.3 - uTime * 4.0;
+            float ca = cos(tw), sa = sin(tw);
+            float pulse = 1.0 + 0.16 * pow(1.0 - fract(along * uLen / 1.8 - uTime * 6.0), 10.0);
+            p.yz = vec2(p.y * ca - p.z * sa, p.y * sa + p.z * ca) * r * hex * pulse;
+          } else {
+            float wob = 1.0 + 0.18 * sin(along * uLen * 1.3 - uTime * 40.0) + 0.1 * sin(along * uLen * 3.1 + uTime * 23.0);
+            p.yz *= r * wob;
+          }
           vec4 mv = modelViewMatrix * vec4(p, 1.0);
+          vPos = mv.xyz;
           vec3 n = normalize(normalMatrix * normalize(vec3(0.0, position.y, position.z)));
           vView = abs(dot(n, normalize(-mv.xyz)));
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime; uniform float uIntensity;
+        uniform float uTime; uniform float uIntensity; uniform float uLen; uniform float uPrism;
         uniform vec3 uColA; uniform vec3 uColB;
-        varying vec2 vUv; varying float vView;
+        varying vec2 vUv; varying float vView; varying vec3 vPos;
         float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float noise(vec2 p) {
           vec2 i = floor(p), f = fract(p);
@@ -153,6 +169,25 @@ export class BreathBeam {
         }
         void main() {
           float along = vUv.y;
+          if (uPrism > 0.5) {
+            // flat facets: the face normal from screen-space derivatives
+            vec3 fn = normalize(cross(dFdx(vPos), dFdy(vPos)));
+            float facing = clamp(abs(dot(fn, normalize(-vPos))), 0.0, 1.0);
+            // rings of light running out along the beam, each with a sharp front
+            float ring = pow(1.0 - fract(along * uLen / 1.8 - uTime * 6.0), 10.0);
+            // bright seams where the facets meet
+            float f = fract(vUv.x * 6.0);
+            float seam = smoothstep(0.09, 0.0, min(f, 1.0 - f));
+            // light split into a rainbow on the faces turned away
+            vec3 rainbow = 0.5 + 0.5 * cos(6.2832 * (facing * 1.3 + along * uLen * 0.05 - uTime * 1.2 + vec3(0.0, 0.33, 0.67)));
+            float shimmer = 0.75 + 0.25 * noise(vec2(vUv.x * 12.0, along * 40.0 - uTime * 30.0));
+            vec3 c = uColA * (0.3 + 0.7 * facing + 0.5 * ring + 0.5 * seam) * 1.4 * shimmer
+              + uColB * (pow(facing, 10.0) * 0.35 + ring * 0.35 + seam * 0.3)
+              + rainbow * (1.0 - facing) * 0.7;
+            float a = min(1.0, 0.3 + 0.3 * facing + 0.5 * ring + 0.45 * seam) * smoothstep(1.0, 0.86, along) * uIntensity;
+            gl_FragColor = vec4(c * a, a);
+            return;
+          }
           float n = noise(vec2(vUv.x * 10.0, along * 30.0 - uTime * 28.0));
           n = 0.5 * n + 0.5 * noise(vec2(vUv.x * 22.0, along * 70.0 - uTime * 50.0));
           // pow(0, y) can yield NaN on D3D (ANGLE) at the silhouette, so keep the base positive
@@ -176,6 +211,11 @@ export class BreathBeam {
     this.mesh.visible = false;
     this.mesh.renderOrder = 3;
     this.light = new THREE.PointLight(0x55bbff, 0, 28, 2);
+  }
+
+  /** prism: the Kaiju's crystal beam; otherwise the flowing one. */
+  setStyle(prism) {
+    this.uniforms.uPrism.value = prism ? 1 : 0;
   }
 
   /** Breath colours from a skin: beam = [outer, core] HDR rgb. */

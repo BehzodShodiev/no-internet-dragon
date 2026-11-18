@@ -1,5 +1,5 @@
 // Supply drops: now and then a crate parachutes onto the track. Run through it, smash it or burn it to
-// open it. MAGNET pulls in every crystal ahead for 10 s, ATOMIC CORE fills the breath, RAGE SHARD adds half
+// open it. MAGNET pulls in every crystal ahead for 10 s, POWER CORE fills the breath, RAGE SHARD adds half
 // a Rage meter. Crates never hurt and never block, and they come from their own seeded stream
 // (hash32(seed, 3000)), so a seeded run replays the same drops and the obstacle sequence is untouched.
 import * as THREE from 'three';
@@ -8,7 +8,7 @@ import { mulberry32, hash32 } from '../gfx/noise.js';
 
 export const POWERUPS = {
   magnet: { label: 'MAGNET', sub: 'Crystals fly to you for 10 s', color: 0x3ff0c0 },
-  core: { label: 'ATOMIC CORE', sub: 'Breath fully charged', color: 0x4aa2ff },
+  core: { label: 'POWER CORE', sub: 'Breath fully charged', color: 0x4aa2ff },
   rage: { label: 'RAGE SHARD', sub: '+50% Kaiju Rage', color: 0xff6a35 },
 };
 const KINDS = Object.keys(POWERUPS);

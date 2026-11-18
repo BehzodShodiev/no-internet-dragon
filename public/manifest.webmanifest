@@ -1,7 +1,7 @@
 {
   "name": "No Internet Dragon",
   "short_name": "Dragon",
-  "description": "A 2D/3D endless runner for when the internet is down, starring a giant atomic lizard.",
+  "description": "A 2D/3D endless runner for when the internet is down, starring a crystal-backed giant lizard.",
   "start_url": "./",
   "display": "fullscreen",
   "orientation": "landscape",
