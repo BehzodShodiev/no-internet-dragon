@@ -22,6 +22,7 @@ const SCENES = {
   'desert-noon-3d-vh': { level: 0, view: '3d', quality: 'veryhigh', day: 0.25, budgetless: true },
   'volcano-boss-3d-vh': { level: 2, view: '3d', quality: 'veryhigh', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }', budgetless: true },
   'volcano-boss-3d-vh-hydra': { level: 2, view: '3d', quality: 'veryhigh', monster: 'ghidorah', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }', budgetless: true },
+  'desert-noon-3d-vh-moth': { level: 0, view: '3d', quality: 'veryhigh', monster: 'mothra', day: 0.25, budgetless: true },
   'phone-medium': { level: 0, view: '3d', quality: 'medium', day: 0.25, screen: { w: 844, h: 390, dpr: 2, mobile: true }, budgetless: true },
 };
 const pick = A.scenes ? String(A.scenes).split(',') : Object.keys(SCENES);

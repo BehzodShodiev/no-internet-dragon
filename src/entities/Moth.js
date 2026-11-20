@@ -1,4 +1,6 @@
-// the Moth Queen: a procedural giant moth, the first flying monster. It has the same interface as Dragon (group,
+// the Moth Queen: a procedural giant moon moth, the first flying monster. Pale jade wings with violet
+// crescents, long tails on the hind wings, a white-and-lilac furry body. detail 'hd' (Very High): finer wings
+// and textures, fluffier fur, faceted eyes, segmented spiny legs, denser antennae; same pose and hitboxes. It has the same interface as Dragon (group,
 // update, getHitboxes, getMouthWorld, getSideMouths, setGlow, setRage, setSkin, glowColor, hitX, roar,
 // onFootstep), so Game drives both the same way.
 //
@@ -58,12 +60,16 @@ const FORE = {
   root: [0.25, -0.35], th: [0.2, -1.4], scallop: 0,
   rk: [0, 0.08, 0.3, 0.55, 0.75, 0.9, 1], rv: [2.75, 3.0, 2.6, 2.05, 1.6, 1.25, 1.0],
 };
+// the hind wing trails a long tail (a streamer) from its outer margin
 const HIND = {
   root: [0.1, -0.45], th: [-0.45, -1.62], scallop: 0.035,
   rk: [0, 0.25, 0.5, 0.75, 1], rv: [1.75, 2.1, 2.05, 1.8, 1.15],
+  tail: { at: 0.72, len: 1.7, w: 0.075 },
 };
+/** Extra length of the hind wing's tail at v (0 off the tail). */
+const tailAt = (w, v) => (w.tail ? w.tail.len * Math.exp(-(((v - w.tail.at) / w.tail.w) ** 2)) : 0);
 function wingPoint(w, u, v, out) {
-  const R = curve(w.rk, w.rv, v) * (1 - w.scallop * Math.abs(Math.sin(v * Math.PI * 5)));
+  const R = curve(w.rk, w.rv, v) * (1 - w.scallop * Math.abs(Math.sin(v * Math.PI * 5))) + tailAt(w, v);
   const th = lerp(w.th[0], w.th[1], v);
   out.x = lerp(w.root[0], w.root[1], v) + u * R * Math.sin(th);
   out.y = 0.1 * Math.sin(Math.PI * v) * u * (1 - 0.5 * u); // a slight camber
@@ -85,13 +91,14 @@ function dataTexture(data, w, h, srgb) {
 
 /** Fine fur running along the body (u): streaky height noise, as colour variation and a normal map. */
 function makeFur(size = 256) {
+  const k = size / 256; // the same pattern at any resolution
   const tn = createTileableNoise(77);
   const hgt = new Float32Array(size * size);
   const col = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const u = x / size, v = y / size;
-      const h = 0.6 * tn.noise(u * 6, v * 48, 6, 48) + 0.4 * tn.noise(u * 12, v * 96, 12, 96);
+      const h = 0.6 * tn.noise(u * 6, v * 48, 6, 48) + 0.4 * tn.noise(u * 12, v * 96, 12, 96) + (k > 1 ? 0.25 * tn.noise(u * 24, v * 192, 24, 192) : 0);
       const i = y * size + x;
       hgt[i] = h;
       const t = clamp01(0.78 + 0.3 * h + 0.08 * tn.noise(u * 4, v * 4, 4, 4));
@@ -103,64 +110,61 @@ function makeFur(size = 256) {
 }
 
 /**
- * Paints a wing in its (u, v) space: amber to gold, dark veins radiating from the root, a zig-zag band,
- * a big eyespot, and a dark border with pale spots. Also a colour glow map (the eyespots and spots glow).
+ * Paints a wing in its (u, v) space, a moon moth's: pale jade deepening toward the root, cream toward the
+ * tips, a violet bar along the forewing's leading edge, pale veins, a crescent moon on each wing (silver,
+ * outlined in violet) and a thin yellow margin; the hind wing's tail fades to lilac. Also a glow map (the
+ * crescents and the margin glow, faint moonlight everywhere else).
  */
 function makeWingTextures(w, hind, W = 256, H = 256) {
   const col = new Uint8Array(W * H * 4);
   const glow = new Uint8Array(W * H * 4);
   const P = V(0, 0, 0);
-  const E = wingPoint(w, hind ? 0.55 : 0.6, hind ? 0.5 : 0.42, V(0, 0, 0));
-  const eR = hind ? 0.4 : 0.44;
-  const E2 = wingPoint(w, 0.8, 0.1, V(0, 0, 0)); // small apex spot (forewing)
+  const E = wingPoint(w, hind ? 0.5 : 0.56, hind ? 0.42 : 0.4, V(0, 0, 0));
+  const eR = hind ? 0.3 : 0.34;
+  const E2 = wingPoint(w, hind ? 0.42 : 0.47, hind ? 0.42 : 0.4, V(0, 0, 0)); // the circle that carves the crescent
   const veins = hind ? 6 : 8;
   const span = Math.abs(w.th[1] - w.th[0]);
   const c = [0, 0, 0], g = [0, 0, 0];
   const mix = (arr, rgb, k) => { for (let i = 0; i < 3; i++) arr[i] += (rgb[i] - arr[i]) * k; };
-  const root = [92, 52, 24], dark = [34, 19, 11], cream = [255, 236, 172];
-  const baseA = hind ? [196, 74, 22] : [214, 118, 30], baseB = hind ? [236, 142, 44] : [246, 196, 74];
+  const root = [236, 230, 244], violet = [112, 52, 118], silver = [250, 248, 236], lilac = [214, 168, 226];
+  const baseA = [128, 192, 150], baseB = [214, 236, 192], vein = [96, 146, 112], margin = [236, 228, 150];
   for (let j = 0; j < H; j++) {
     for (let i = 0; i < W; i++) {
       const u = (i + 0.5) / W, v = (j + 0.5) / H;
       wingPoint(w, u, v, P);
-      const R = curve(w.rk, w.rv, v);
-      const across = span * u * R; // physical length of one unit of v at this u
+      const Rv = curve(w.rk, w.rv, v);
+      const tail = tailAt(w, v);
+      const R = Rv + tail;
+      const across = span * u * R;
       c[0] = baseA[0]; c[1] = baseA[1]; c[2] = baseA[2];
-      mix(c, baseB, smooth(0.4, 0.85, u) * 0.75);
-      g[0] = 26; g[1] = 12; g[2] = 3; // a faint warm glow everywhere
-      // zig-zag band across the middle, its edges glowing
-      const bandU = 0.34 + 0.035 * Math.sin(v * TAU * 4);
-      const bd = Math.abs(u - bandU) * R;
-      if (bd < 0.075) { mix(c, dark, smooth(0.075, 0.045, bd)); mix(g, [110, 50, 12], smooth(0.075, 0.05, bd) * smooth(0.02, 0.05, bd)); }
-      // veins: radial, plus the arc closing the discal cell
+      mix(c, baseB, smooth(0.35, 0.9, u) * 0.8);
+      g[0] = 10; g[1] = 16; g[2] = 18; // faint moonlight
+      // veins: radial, plus the arc closing the cell
       let vd = Infinity;
-      for (let k = 1; k < veins; k++) vd = Math.min(vd, Math.abs(v - (k / veins + 0.012 * Math.sin(u * 9 + k))) * across);
-      vd = Math.min(vd, Math.abs(u - 0.47) * R + (v > 0.15 && v < 0.75 ? 0 : 1));
-      const vein = smooth(0.034, 0.012, vd) * smooth(0.06, 0.2, u);
-      mix(c, [60, 30, 14], vein * 0.85);
-      // dark leading edge
-      mix(c, dark, smooth(0.09, 0.03, v * across) * smooth(0.05, 0.15, u));
-      // the eyespot: blue-white core, yellow ring, black ring, red halo
-      const er = Math.hypot(P.x - E.x, P.z - E.z) / eR;
-      if (er < 1) {
-        if (er < 0.3) { mix(c, [150, 225, 255], smooth(0.3, 0.22, er)); mix(g, [110, 215, 255], smooth(0.3, 0.2, er)); }
-        else if (er < 0.52) { mix(c, [255, 216, 92], 1); mix(g, [255, 186, 60], 0.75); }
-        else if (er < 0.75) mix(c, [22, 12, 8], 1);
-        else mix(c, [190, 56, 18], smooth(1, 0.82, er));
-        if (er < 0.33) mix(c, [255, 255, 255], smooth(0.12, 0.0, Math.hypot(P.x - E.x - 0.06, P.z - E.z - 0.05) / eR) * 0.8); // highlight
+      for (let k = 1; k < veins; k++) vd = Math.min(vd, Math.abs(v - (k / veins + 0.01 * Math.sin(u * 9 + k))) * across);
+      vd = Math.min(vd, Math.abs(u - 0.4) * R + (v > 0.2 && v < 0.7 ? 0 : 1));
+      mix(c, vein, smooth(0.03, 0.01, vd) * smooth(0.06, 0.2, u) * 0.8);
+      // the forewing's violet leading edge
+      if (!hind) mix(c, violet, smooth(0.11, 0.05, v * across) * smooth(0.03, 0.12, u));
+      // the crescent moon: inside one circle, outside a second one shifted toward the root
+      const d1 = Math.hypot(P.x - E.x, P.z - E.z) / eR, d2 = Math.hypot(P.x - E2.x, P.z - E2.z) / (eR * 0.86);
+      const inside = smooth(1.0, 0.92, d1) * smooth(0.95, 1.05, d2);
+      if (inside > 0) {
+        const rim = Math.min(Math.abs(d1 - 1) * eR, Math.abs(d2 - 1) * eR * 0.86);
+        mix(c, silver, inside);
+        mix(c, violet, inside * smooth(0.035, 0.012, rim));
+        mix(g, [210, 196, 255], inside * smooth(0.012, 0.04, rim));
       }
-      if (!hind) {
-        const e2 = Math.hypot(P.x - E2.x, P.z - E2.z) / 0.15;
-        if (e2 < 1) { mix(c, [255, 246, 214], smooth(1, 0.7, e2)); mix(g, [255, 236, 190], smooth(1, 0.6, e2)); }
+      // the tail fades to lilac
+      if (tail > 0.05) {
+        const k = smooth(0.1, 0.6, tail / w.tail.len) * smooth(0.55, 0.95, u);
+        mix(c, lilac, k);
+        mix(g, [70, 40, 80], k * 0.6);
       }
-      // dark border with a row of pale spots between the veins
-      const edge = 0.86 - 0.025 * Math.cos(v * TAU * (veins - 1));
-      if (u > edge - 0.02) {
-        mix(c, dark, smooth(edge - 0.02, edge + 0.01, u));
-        const sv = (Math.floor(v * veins) + 0.5) / veins;
-        const sd = Math.hypot((u - 0.93) * R, (v - sv) * across) / 0.075;
-        if (sd < 1) { mix(c, cream, smooth(1, 0.55, sd)); mix(g, [255, 214, 140], smooth(1, 0.5, sd)); }
-      }
+      // a thin glowing margin
+      const m = smooth(0.94, 0.985, u);
+      mix(c, margin, m * 0.85);
+      mix(g, [90, 88, 40], m * 0.5);
       // furry root
       mix(c, root, smooth(0.16, 0.04, u));
       mix(g, [0, 0, 0], smooth(0.2, 0.08, u));
@@ -218,8 +222,10 @@ function paint(g, hex) {
 }
 
 export class Moth {
-  constructor() {
+  /** detail: 'std', or 'hd' for the Very High model. */
+  constructor(detail = 'std') {
     this.variant = 'mothra';
+    this.detail = detail;
     this.flyer = true;
     this.group = new THREE.Group();
     this.group.name = 'mothra';
@@ -261,14 +267,25 @@ export class Moth {
     this.update(0, { speed: 0, grounded: true, vy: 0 });
   }
 
+  /** Frees the GPU resources of this model (when Very High swaps models). */
+  dispose() {
+    this.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+    for (const m of [this.furMat, this.eyeMat, ...this.wingMats]) {
+      for (const t of [m.map, m.normalMap, m.emissiveMap]) t?.dispose();
+      m.dispose();
+    }
+  }
+
   _buildMaterials() {
-    const fur = makeFur();
+    const hd = this.detail === 'hd';
+    const fur = makeFur(hd ? 512 : 256);
     this.furMat = new THREE.MeshStandardMaterial({
       map: fur.map, normalMap: fur.normalMap, normalScale: new THREE.Vector2(0.9, 0.9),
       vertexColors: true, roughness: 0.95, metalness: 0, envMapIntensity: 0.8,
     });
+    // dark violet compound eyes (Very High: faceted, so each facet catches the light)
     this.eyeMat = new THREE.MeshStandardMaterial({
-      color: 0x10263f, emissive: 0x3ab8ff, emissiveIntensity: 1.5, roughness: 0.12, metalness: 0.2,
+      color: 0x140a24, emissive: 0xb07aff, emissiveIntensity: 0.55, roughness: 0.12, metalness: 0.2, flatShading: hd,
     });
     // the wings glow like the Kaiju's plates: a base level plus a wave running out along the span
     this.wingUniforms = { uGlow: { value: 0.35 }, uWaveAmp: { value: 0 }, uWavePos: { value: -1 }, uFlex: { value: 0 } };
@@ -290,14 +307,16 @@ export class Moth {
       m.customProgramCacheKey = () => 'mothwing';
       return m;
     };
-    this.foreMat = wingMat(makeWingTextures(FORE, false, 512, 256));
-    this.hindMat = wingMat(makeWingTextures(HIND, true, 256, 256));
+    this.foreMat = wingMat(makeWingTextures(FORE, false, hd ? 1024 : 512, hd ? 512 : 256));
+    this.hindMat = wingMat(makeWingTextures(HIND, true, hd ? 512 : 256, hd ? 1024 : 512));
     this.wingMats = [this.foreMat, this.hindMat];
   }
 
   _buildMeshes() {
-    const brown = new THREE.Color(0x4a2c18), brownLo = new THREE.Color(0x6e4524), ochre = new THREE.Color(0xb57b30);
-    const dark = new THREE.Color(0x2c1a10), cream = new THREE.Color(0xeee2c4);
+    // white and lilac fur: a white thorax and collar, a cream abdomen banded in lilac
+    const hd = this.detail === 'hd';
+    const brown = new THREE.Color(0xd8d2e2), brownLo = new THREE.Color(0xb8a8cc), ochre = new THREE.Color(0xf2ecdc);
+    const dark = new THREE.Color(0x9c84b4), cream = new THREE.Color(0xffffff);
     const add = (parent, geo, mat, shadow = true) => {
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = shadow;
@@ -312,9 +331,10 @@ export class Moth {
     // ---- thorax with a fluffy collar ----
     const thorax = sweep({
       points: [V(-0.55, -0.03), V(-0.2, 0.01), V(0.2, 0.03), V(0.55, 0.05)],
-      segments: 30, radial: 28, uvScale: [1.5, 2],
+      segments: hd ? 60 : 30, radial: hd ? 56 : 28, uvScale: [1.5, 2],
       section: (t, a, out) => {
-        const r = curve([0, 0.2, 0.6, 1], [0.24, 0.47, 0.5, 0.3], t) * (1 + 0.04 * Math.sin(a * 7 + t * 13));
+        const fluff = hd ? 0.03 * Math.sin(a * 23 + t * 41) * Math.sin(a * 11 - t * 17) : 0;
+        const r = curve([0, 0.2, 0.6, 1], [0.24, 0.47, 0.5, 0.3], t) * (1 + 0.04 * Math.sin(a * 7 + t * 13) + fluff);
         out.x = Math.sin(a) * r * 1.02;
         out.y = Math.cos(a) * r * 0.95;
       },
@@ -323,9 +343,9 @@ export class Moth {
     });
     const collar = sweep({
       points: [V(0.28, 0.02), V(0.45, 0.04), V(0.66, 0.06)],
-      segments: 16, radial: 36, uvScale: [0.8, 3],
+      segments: hd ? 32 : 16, radial: hd ? 96 : 36, uvScale: [0.8, 3],
       section: (t, a, out) => {
-        const tuft = 1 + 0.12 * Math.max(0, Math.sin(a * 9)) * Math.sin(Math.PI * t);
+        const tuft = 1 + (0.12 * Math.max(0, Math.sin(a * 9)) + (hd ? 0.06 * Math.max(0, Math.sin(a * 31)) : 0)) * Math.sin(Math.PI * t);
         const r = (0.2 + 0.3 * Math.pow(Math.sin(Math.PI * t), 0.7)) * tuft;
         out.x = Math.sin(a) * r;
         out.y = Math.cos(a) * r * 0.92;
@@ -340,7 +360,7 @@ export class Moth {
     body.add(this.abdomen);
     const abd = sweep({
       points: [V(0.15, 0.02), V(-0.4, -0.04), V(-0.95, -0.12), V(-1.4, -0.22), V(-1.62, -0.28)],
-      segments: 70, radial: 26, uvScale: [3, 2],
+      segments: hd ? 140 : 70, radial: hd ? 52 : 26, uvScale: [3, 2],
       section: (t, a, out) => {
         const s = (t * 7) % 1;
         const r = curve([0, 0.2, 0.5, 0.82, 1], [0.3, 0.38, 0.35, 0.2, 0.05], t) * (0.93 + 0.09 * Math.sin(Math.PI * s));
@@ -361,7 +381,7 @@ export class Moth {
     body.add(this.head);
     const skull = sweep({
       points: [V(0.0, 0.0), V(0.25, 0.04), V(0.55, 0.05), V(0.8, 0.0), V(0.9, -0.05)],
-      segments: 30, radial: 28, uvScale: [1, 1.5],
+      segments: hd ? 48 : 30, radial: hd ? 48 : 28, uvScale: [1, 1.5],
       section: (t, a, out) => {
         const r = curve([0, 0.25, 0.55, 0.85, 1], [0.2, 0.33, 0.35, 0.25, 0.06], t);
         out.x = Math.sin(a) * r * 1.04;
@@ -373,19 +393,20 @@ export class Moth {
     const parts = [skull];
     for (const s of [1, -1]) {
       const palp = new THREE.ConeGeometry(0.05, 0.26, 8).rotateZ(Math.PI / 2 + 0.5).translate(0.88, -0.16, 0.08 * s);
-      parts.push(paint(palp, 0x6e4524));
+      parts.push(paint(palp, 0xc8b4dc));
       // antenna: a curved shaft with a comb of filaments on both sides
       const pts = [V(0.6, 0.24, 0.1 * s), V(0.72, 0.75, 0.32 * s), V(0.55, 1.25, 0.58 * s), V(0.25, 1.55, 0.74 * s)];
       parts.push(sweep({
         points: pts, segments: 24, radial: 6, curveType: 'catmullrom',
         section: (t, a, out) => { const r = 0.035 * (1 - 0.55 * t); out.x = Math.sin(a) * r; out.y = Math.cos(a) * r; },
-        color: (t, a, out) => out.set(0x5a321a),
+        color: (t, a, out) => out.set(0xb89a52),
         capEnd: true,
       }));
       const shaft = new THREE.CatmullRomCurve3(pts, false, 'catmullrom');
       const P = V(0, 0, 0), T = V(0, 0, 0), N = V(0, 0, 0);
-      for (let k = 0; k < 20; k++) {
-        const t = 0.1 + (0.86 * k) / 19;
+      const nf = hd ? 40 : 20;
+      for (let k = 0; k < nf; k++) {
+        const t = 0.1 + (0.86 * k) / (nf - 1);
         shaft.getPointAt(t, P);
         shaft.getTangentAt(t, T);
         N.crossVectors(T, V(0, 0, 1)).normalize();
@@ -395,16 +416,16 @@ export class Moth {
           const f = new THREE.CylinderGeometry(0.006, 0.011, len, 4).translate(0, len / 2, 0);
           f.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), dir));
           f.translate(P.x, P.y, P.z);
-          parts.push(paint(f, 0x7a4524));
+          parts.push(paint(f, 0xd8c070));
         }
       }
     }
     add(this.head, mergeGeometries(parts.map(clean), false), this.furMat);
-    const eyes = [1, -1].map((s) => new THREE.SphereGeometry(0.21, 22, 16).scale(1.15, 1, 0.9).translate(0.5, 0.07, 0.25 * s));
+    const eyes = [1, -1].map((s) => (hd ? new THREE.IcosahedronGeometry(0.21, 3) : new THREE.SphereGeometry(0.21, 22, 16)).scale(1.15, 1, 0.9).translate(0.5, 0.07, 0.25 * s));
     add(this.head, mergeGeometries(eyes.map(clean), false), this.eyeMat, false);
 
     // ---- wings: rooted on top of the thorax, the left ones mirrored ----
-    const foreGeo = wingGeometry(FORE), hindGeo = wingGeometry(HIND, 10, 24);
+    const foreGeo = hd ? wingGeometry(FORE, 28, 72) : wingGeometry(FORE), hindGeo = hd ? wingGeometry(HIND, 24, 96) : wingGeometry(HIND, 10, 40);
     this.wings = [];
     for (const side of [1, -1]) {
       for (const [geo, mat, root, hind] of [[foreGeo, this.foreMat, V(0.12, 0.3, 0.2), false], [hindGeo, this.hindMat, V(-0.22, 0.22, 0.2), true]]) {
@@ -419,14 +440,25 @@ export class Moth {
     }
 
     // ---- legs: femur and tibia per leg, instanced, placed by 2-bone IK every frame ----
-    const femur = mergeGeometries([
-      new THREE.CylinderGeometry(0.07, 0.095, L1, 10).translate(0, L1 / 2, 0),
-      new THREE.SphereGeometry(0.085, 10, 8).translate(0, L1, 0),
-    ].map((g) => paint(clean(g), 0x3a2414)), false);
-    const tibia = mergeGeometries([
+    // lilac-pink legs (Very High: a furred femur, a jointed tibia with a row of spines, and a tarsus)
+    const legA = 0xb88cb8, legB = 0xa07aa8;
+    const femurParts = [
+      new THREE.CylinderGeometry(0.07, 0.095, L1, hd ? 18 : 10, hd ? 6 : 1).translate(0, L1 / 2, 0),
+      new THREE.SphereGeometry(0.085, hd ? 18 : 10, hd ? 14 : 8).translate(0, L1, 0),
+    ];
+    const tibiaParts = hd ? [
+      new THREE.CylinderGeometry(0.05, 0.07, 0.5, 16).translate(0, 0.25, 0),
+      new THREE.SphereGeometry(0.055, 12, 10).translate(0, 0.5, 0),
+      new THREE.CylinderGeometry(0.03, 0.05, L2 - 0.6, 14).translate(0, 0.5 + (L2 - 0.6) / 2, 0),
+      new THREE.ConeGeometry(0.035, 0.16, 8).rotateZ(-0.35).translate(0.02, L2 - 0.05, 0),
+      ...[0.12, 0.24, 0.36, 0.62, 0.74].map((y, i) => new THREE.ConeGeometry(0.014, 0.09, 6).translate(0, 0.045, 0)
+        .rotateZ(-0.9).rotateY(i * 1.7).translate(0, y, 0)),
+    ] : [
       new THREE.CylinderGeometry(0.035, 0.07, L2 - 0.1, 10).translate(0, (L2 - 0.1) / 2, 0),
       new THREE.ConeGeometry(0.04, 0.16, 6).rotateZ(-0.35).translate(0.02, L2 - 0.05, 0),
-    ].map((g) => paint(clean(g), 0x4a2c18)), false);
+    ];
+    const femur = mergeGeometries(femurParts.map((g) => paint(clean(g), legA)), false);
+    const tibia = mergeGeometries(tibiaParts.map((g) => paint(clean(g), legB)), false);
     this.femurs = new THREE.InstancedMesh(femur, this.furMat, 6);
     this.tibias = new THREE.InstancedMesh(tibia, this.furMat, 6);
     for (const m of [this.femurs, this.tibias]) {

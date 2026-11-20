@@ -34,13 +34,13 @@ export const MONSTERS = [
   {
     id: 'mothra', name: 'Moth Queen', model: 'moth', glide: true, voice: 2.3, sound: { roar: 'trill', breath: 'dust' },
     attackName: 'WING DUST',
-    note: 'Giant moth: hold jump on the way down to glide, let go to drop. Wing-dust beam. Gliding is an edge: score ×0.9.',
+    note: 'Giant moon moth with long-tailed jade wings: hold jump on the way down to glide, let go to drop. Silver wing-dust beam. Gliding is an edge: score ×0.9.',
     goal: { stat: 'crystals', need: 500, text: 'Collect 500 crystals in total' },
     look: {
-      id: 'mothra', name: 'Moth Queen', note: 'Glowing wings',
+      id: 'mothra', name: 'Moth Queen', note: 'Moonlit wings',
       // skin: body fur tint; plate: wing tint; glow: tint of the wing patterns' glow (the patterns carry their own colours)
-      skin: [1, 1, 1], plate: [1, 1, 1], glow: 0xfff2d8, eye: 0x3ab8ff, crack: 0x000000, metal: 0, rough: 0.95,
-      beam: [[1.5, 0.95, 0.35], [3.0, 3.1, 2.6]], spark: [2.6, 2.2, 1.0], hitX: 1, score: 0.9,
+      skin: [1, 1, 1], plate: [1, 1, 1], glow: 0xece4ff, eye: 0xb07aff, crack: 0x000000, metal: 0, rough: 0.95,
+      beam: [[1.05, 0.85, 1.75], [3.0, 2.9, 3.4]], spark: [2.5, 2.3, 3.2], hitX: 1, score: 0.9,
     },
   },
   {

@@ -392,7 +392,7 @@ export class Game {
 
   /** Builds a monster's model (hidden) and keeps it for later picks. */
   _buildMonster(m) {
-    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth() : new Dragon(this.tex.scales, m.variant, this.modelDetail || 'std'));
+    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth(this.modelDetail || 'std') : new Dragon(this.tex.scales, m.variant, this.modelDetail || 'std'));
     d.onFootstep = (leg, fx) => this._footstep(leg, fx);
     d.onWingbeat = (k) => this._wingbeat(k);
     d.group.visible = false;
@@ -1017,7 +1017,7 @@ export class Game {
   }
 
   /**
-   * Swaps the monster models to the preset's detail level (the detailed Kaiju and Hydra on Very High). Only on menus:
+   * Swaps the monster models to the preset's detail level (the detailed Kaiju, Hydra and Moth Queen on Very High). Only on menus:
    * a change during a run waits for it to end. The new model's shaders compile in the background.
    */
   _applyModels() {
@@ -1027,7 +1027,7 @@ export class Game {
     this.modelDetail = want;
     for (const id of Object.keys(this.dragons)) {
       const old = this.dragons[id];
-      if (!(old instanceof Dragon) || !HD_VARIANTS.has(old.variant)) continue; // the Kaiju and the Hydra have detailed models
+      if (!(old instanceof Moth) && !(old instanceof Dragon && HD_VARIANTS.has(old.variant))) continue; // the Rex has no detailed model
       const d = this._buildMonster(MONSTERS.find((x) => x.id === id));
       d.group.position.copy(old.group.position);
       d.group.visible = old.group.visible;

@@ -1,4 +1,4 @@
-// Hitbox parity between the standard and detailed (Very High) models of the Kaiju and the Jade Hydra: each pair is driven through the
+// Hitbox parity between the standard and detailed (Very High) models of the Kaiju, the Jade Hydra and the Moth Queen: each pair is driven through the
 // same run, duck, jump and death poses and every hitbox must match exactly (they share one skeleton).
 //   node tools/hdparity.mjs [--url URL]
 import { Session } from './lib/cdp.mjs';
@@ -10,10 +10,12 @@ const s = await Session.launch({ w: 640, h: 360 });
 await s.navigate(url);
 if (!(await s.waitState('title', 120000))) { console.log('no title'); process.exit(1); }
 const results = [];
-for (const variant of ['kaiju', 'ghidorah']) {
+for (const variant of ['kaiju', 'ghidorah', 'mothra']) {
 const r = await s.evaluate(`(async () => {
-  const g = window.__game, D = g.dragon.constructor;
-  const a = new D(g.tex.scales, '${variant}', 'std'), b = new D(g.tex.scales, '${variant}', 'hd');
+  const g = window.__game;
+  const make = (detail) => { if ('${variant}' !== 'mothra') return new g.dragon.constructor(g.tex.scales, '${variant}', detail);
+    g.selectMonster('mothra', true); const M = g.dragons.mothra.constructor; return new M(detail); };
+  const a = make('std'), b = make('hd');
   if (b.detail !== 'hd') return 'no detailed model';
   const boxes = () => Array.from({ length: 8 }, () => new Float32Array(4));
   const ba = boxes(), bb = boxes();
