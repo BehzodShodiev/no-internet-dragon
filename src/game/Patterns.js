@@ -39,6 +39,7 @@ export const PIECES = {
   army: [
     { id: 'checkpoint', title: 'CHECKPOINT', gapK: 1.2, items: [{ type: 'hedgehog' }, { type: 'tower' }, { type: 'hedgehog' }] },
     convoy,
+    { id: 'barrage', title: 'ARTILLERY BARRAGE', gapK: 1.05, items: [{ type: 'artillery' }, { type: 'artillery' }, { type: 'artillery' }] },
   ],
   city: [jam, { ...blockBuster, minCycle: 1 }], // three buildings pay a lot: in the Rampage only from loop 2
   siege: [blockBuster, jam, { ...convoy, minCycle: 1 }],

@@ -1,5 +1,5 @@
-// Desert landmarks, modelled in code: the bleached skeleton of a giant kaiju half-buried in the dunes, and
-// the ruins of a colonnade. Scenery places them on a tile twice the terrain period, so they don't come
+// Desert landmarks, modelled in code: the bleached skeleton of a giant kaiju half-buried in the dunes, the
+// ruins of a colonnade, and an oasis. Scenery places them on a tile twice the terrain period, so they don't come
 // round with every repeat of the dunes. Both are single merged meshes with vertex colours.
 import * as THREE from 'three';
 import { mergeLoose, setVertexColor } from '../gfx/geometry.js';
@@ -54,6 +54,66 @@ export function buildSkeleton() {
   parts.push(part(new THREE.CylinderGeometry(0.3, 0.38, 3.2, 8).rotateZ(0.9), BONE, -10.5, 0.6, 4.8));
   parts.push(part(new THREE.CylinderGeometry(0.22, 0.28, 2.6, 8).rotateZ(-0.5), BONE, -12.6, 1.2, 5.2));
   for (let k = 0; k < 3; k++) parts.push(part(new THREE.ConeGeometry(0.16, 1.1, 5).rotateZ(-2.2 - k * 0.25), BONE_DARK, -13.8 - k * 0.2, 0.3, 5.0 + k * 0.4));
+  return mergeLoose(parts);
+}
+
+/**
+ * An oasis about 30 m across: a pond (deeper teal in the middle, a ring of wet sand), reeds at the water's
+ * edge, and five date palms of different heights leaning out over it. Vertex colours; y = 0 is the sand.
+ */
+export function buildOasis(seed = 11) {
+  let s = seed;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const parts = [];
+  // the pond and its wet rim (a flattened disc with colours by radius)
+  const pond = new THREE.CircleGeometry(1, 48, 0, Math.PI * 2);
+  const pc = pond.attributes.position, col = new Float32Array(pc.count * 3), c = new THREE.Color();
+  const deep = new THREE.Color(0x1f6a6e), shallow = new THREE.Color(0x4fa69a), wet = new THREE.Color(0x8a6a44);
+  for (let i = 0; i < pc.count; i++) {
+    const r = Math.hypot(pc.getX(i), pc.getY(i));
+    if (r < 0.82) c.copy(deep).lerp(shallow, (r / 0.82) ** 2); else c.copy(shallow).lerp(wet, (r - 0.82) / 0.18);
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  pond.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  parts.push(pond.rotateX(-Math.PI / 2).scale(13, 1, 9).translate(0, 0.08, 0));
+  // reeds in clumps around the edge
+  for (let k = 0; k < 26; k++) {
+    const a = rnd() * Math.PI * 2, x = Math.cos(a) * 12.2, z = Math.sin(a) * 8.3;
+    for (let j = 0; j < 4; j++) {
+      const h = 0.9 + rnd() * 1.1;
+      parts.push(part(new THREE.ConeGeometry(0.06, h, 4).rotateZ((rnd() - 0.5) * 0.5).rotateX((rnd() - 0.5) * 0.5), j % 2 ? 0x6f8a3c : 0x58722e, x + (rnd() - 0.5) * 0.8, h / 2, z + (rnd() - 0.5) * 0.8));
+    }
+  }
+  // date palms: a curved, ringed trunk and a crown of drooping fronds
+  const palms = [[-9, 7, 11], [-11, -4, 9], [7, 8.5, 12.5], [10, -6, 8], [2, -9.5, 10]];
+  for (const [px, pz, h] of palms) {
+    const lean = new V(-px, 0, -pz).normalize().multiplyScalar(h * 0.18); // leaning out over the water
+    const trunk = new THREE.CatmullRomCurve3([new V(px, 0, pz), new V(px + lean.x * 0.2, h * 0.5, pz + lean.z * 0.2), new V(px + lean.x, h, pz + lean.z)]);
+    const tg = new THREE.TubeGeometry(trunk, 20, 0.32, 8);
+    const tp = tg.attributes.position, tcol = new Float32Array(tp.count * 3);
+    for (let i = 0; i < tp.count; i++) {
+      c.set(0x7a5a3a).multiplyScalar(0.8 + 0.25 * (Math.sin(tp.getY(i) * 7) > 0.6 ? 1 : 0)); // growth rings
+      tcol[i * 3] = c.r; tcol[i * 3 + 1] = c.g; tcol[i * 3 + 2] = c.b;
+    }
+    tg.setAttribute('color', new THREE.BufferAttribute(tcol, 3));
+    parts.push(tg);
+    const top = trunk.getPoint(1);
+    const n = 11;
+    for (let f = 0; f < n; f++) {
+      const a = (f / n) * Math.PI * 2 + rnd() * 0.3, len = 4.2 + rnd() * 1.4;
+      // a frond: a narrow strip arching up and drooping down at the tip
+      const leaf = new THREE.PlaneGeometry(len, 0.7, 12, 1);
+      const lp = leaf.attributes.position;
+      for (let i = 0; i < lp.count; i++) {
+        const u = (lp.getX(i) + len / 2) / len;
+        lp.setY(i, lp.getY(i) * (1 - 0.7 * u)); // tapers to the tip
+        lp.setZ(i, 1.1 * Math.sin(u * Math.PI * 0.9) - 2.4 * u * u); // arch, then droop
+      }
+      leaf.translate(len / 2, 0, 0).rotateX(-Math.PI / 2).rotateY(-a).translate(top.x, top.y, top.z);
+      parts.push(setVertexColor(leaf, f % 2 ? 0x3f6a2a : 0x4d7d32));
+    }
+    parts.push(part(new THREE.SphereGeometry(0.5, 8, 6).scale(1, 0.7, 1), 0x6a4a2a, top.x, top.y - 0.2, top.z)); // the crown's base
+  }
   return mergeLoose(parts);
 }
 

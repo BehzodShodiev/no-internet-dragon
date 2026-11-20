@@ -34,7 +34,8 @@ import * as TX from '../gfx/textures.js';
 import { TexCache } from '../gfx/TexCache.js';
 import { mulberry32, hash32 } from '../gfx/noise.js';
 
-export const CFG = {
+export const STORM_TIME = 14; // seconds a sandstorm blows (see _sandstorm)
+const CFG = {
   startSpeed: 11,
   maxSpeed: 24,
   accel: 0.12,
@@ -199,6 +200,9 @@ export class Game {
   /** Per-run state shared by the first start and every restart. */
   _resetRun() {
     this.seed = (this.seedBase + this.runCount++) >>> 0;
+    // the Desert's sandstorm comes once a run, at a seeded time (its own stream: spawns are untouched)
+    this.stormAt = 50 + 30 * mulberry32(hash32(this.seed, 4000))();
+    this.stormLeft = 0;
     this.viewHintT = 8; // seconds into the run before the 3D hint (see _viewHint)
     this.score = 0;
     this.dist = 0;
@@ -606,15 +610,14 @@ export class Game {
       cactusS: o._spawnCactus('cactusS', 1), cactusL: o._spawnCactus('cactusL', 1), rock: o._spawnRock(), ptero: o._spawnPtero(12),
       tank: o._spawnTank(12, true), heli: o._spawnHeli(12), shell: o.spawnShell(0, 1), missile: o.spawnMissile(0, 1, 1, 10, 0),
       tower: o._spawnStructure('tower'), fuel: o._spawnStructure('fuel'), hedgehog: o._spawnStructure('hedgehog'), building: o._spawnBuilding(),
-      car: o._spawnCar(), lava: o._spawnLava(), meteor: o._spawnMeteor(), pillar: o._spawnPillar(),
+      car: o._spawnCar(), lava: o._spawnLava(), meteor: o._spawnMeteor(), artillery: o._spawnArtillery(), pillar: o._spawnPillar(),
       boulder: o._spawnBoulder(12), jeep: o._spawnJeep(12),
     };
     const unwarmed = Object.keys(o.pools).filter((k) => !T[k]);
     if (unwarmed.length) console.warn('prewarm: no sample for', unwarmed.join(', '), '(its shaders will compile mid-run)');
     const temp = Object.values(T);
     temp.forEach((t, i) => t.group.position.set(-2 + i * 2.5, 1, 2));
-    const met = T.meteor.model.userData;
-    met.ball.visible = met.crater.visible = true;
+    for (const k of ['meteor', 'artillery']) { const u = T[k].model.userData; u.ball.visible = u.crater.visible = true; }
     this.volcano.setActive(true);
     this.dragonLight.intensity = 1;
     this.city.setActive(true);
@@ -1093,7 +1096,7 @@ export class Game {
     cs.begin();
     cs.add(-0.1, 0, 2.8 * this.skin.hitX, 1.7, 1 - Math.min(1, Math.max(0, this.y) / 3.5));
     for (const o of this.obstacles.active) {
-      if (o.dead || o.y > 0.3 || !o.group || o.type === 'lava' || o.type === 'meteor') continue;
+      if (o.dead || o.y > 0.3 || !o.group || o.type === 'lava' || o.type === 'meteor' || o.type === 'artillery') continue;
       const p = o.group.position;
       if (p.x < -20 || p.x > 120) continue;
       cs.add(p.x, p.z, o.width * 1.3, Math.min(3, Math.max(1.1, o.width * 0.8)));
@@ -1344,13 +1347,44 @@ export class Game {
     this._setChain(c);
   }
 
-  /** A meteor hits the track ahead: fireball, shake, and it leaves a burning crater to jump. */
+  /** A meteor or an artillery shell hits the track ahead: fireball, shake, and it leaves a crater to jump. */
   _meteorImpact(o) {
     this._blast(o.x, 0.4, 0.9);
     for (let i = 0; i < 16; i++) {
       const a = Math.random() * Math.PI;
       this.sparks.emit(o.x, 0.3, (Math.random() - 0.5), Math.cos(a) * 6, 3 + Math.random() * 6, (Math.random() - 0.5) * 4,
         0.5 + Math.random() * 0.5, 0.35, 0.06, 1.8, 0.7, 0.15, 1, 1.2, 14, 1);
+    }
+  }
+
+  /**
+   * The Desert's sandstorm, once a run: a seeded 50-80 s into a Desert Outpost run, never during a gunship,
+   * it blows in, holds for STORM_TIME and dies down: sand-coloured haze (Environment.storm), a dimmer sun,
+   * louder wind and sand streaming past. Looks only: obstacles, gaps and hitboxes are unchanged, and the
+   * haze stays thin near the monster, so the track reads in 2D.
+   */
+  _sandstorm(dt) {
+    let target = 0;
+    if (this.level.id === 1 && this.state === 'running') {
+      if (this.stormAt > 0 && !this.boss.active && !this.bossPending) {
+        this.stormAt -= dt;
+        if (this.stormAt <= 0) {
+          this.stormLeft = STORM_TIME;
+          if (!this.hud.bannerBusy() && !this.pendingBanner) this.hud.banner('HOLD YOUR COURSE', 'SANDSTORM', 'piece');
+        }
+      }
+      if (this.stormLeft > 0) { this.stormLeft -= dt; target = this.boss.active ? 0 : 1; }
+    }
+    const k = (this.stormK = THREE.MathUtils.damp(this.stormK || 0, target, target ? 1.2 : 0.9, dt));
+    this.env.storm = k;
+    if (k < 0.02) return;
+    // sand streaming past on the wind
+    this._sandAcc = (this._sandAcc || 0) + dt * 140 * k;
+    while (this._sandAcc > 1) {
+      this._sandAcc--;
+      const x = -6 + Math.random() * 46, y = 0.2 + Math.random() * 5.5, z = (Math.random() - 0.5) * 22;
+      this.dust.emit(x, y, z, -16 - Math.random() * 12, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 2,
+        0.7 + Math.random() * 0.6, 0.25 + Math.random() * 0.3, 0.6, 0.78, 0.64, 0.46, 0.45 * k, 0.4, 0, 1);
     }
   }
 
@@ -1416,9 +1450,10 @@ export class Game {
     L.color.copy(this.dragon.glowColor).lerp(this._v3c.setRGB(1, 1, 1), 0.65).lerp(this._dustDay.setRGB(1.0, 0.55, 0.3), this.rageK);
   }
 
+  /** A tank or a gunner helicopter fired: the bang and a puff of smoke at the muzzle. */
   _tankFired(o) {
     this.audio.cannon();
-    const x = o.x - 2.3, y = o.shellY;
+    const x = o.x - (o.type === 'heli' ? 1.4 : 2.3), y = o.type === 'heli' ? o.y - 0.2 : o.shellY;
     for (let i = 0; i < 12; i++) {
       this.dust.emit(x, y, 0, -2 - Math.random() * 4, (Math.random() - 0.3) * 2, (Math.random() - 0.5) * 2,
         0.8 + Math.random() * 0.6, 0.4, 2 + Math.random(), 0.42, 0.4, 0.38, 0.4, 2, 0.4, 1);
@@ -2097,7 +2132,9 @@ export class Game {
       } else if (o.type === 'heli' && o.x > -10 && o.x < 50) rotor = Math.max(rotor, 0.55);
       else if (o.type === 'tank' && !o.dead && o.x > -8 && o.x < 34) treads = Math.max(treads, 1 - Math.abs(o.x - 4) / 30);
       else if (o.type === 'ptero' && !o.cried && o.x < 40 && running) { o.cried = true; this.audio.screech(o.x); }
-      else if (o.type === 'meteor' && o.fallT >= 0 && !o.landed) {
+      else if (o.type === 'artillery' && o.fallT >= 0 && !o.landed) {
+        if (!o.cried && running) { o.cried = true; this.audio.meteorWhistle(o.x, 1); } // an incoming shell
+      } else if (o.type === 'meteor' && o.fallT >= 0 && !o.landed) {
         if (!o.cried && running) { o.cried = true; this.audio.meteorWhistle(o.x, 1); }
         const b = o.model.userData.ball.position;
         this.sparks.emit(o.x + b.x, b.y, 0, 3 + Math.random() * 3, 4 + Math.random() * 3, (Math.random() - 0.5) * 2, 0.3, 0.6, 0.1, 1.8, 0.6, 0.15, 1, 1, 0, 1);
@@ -2145,6 +2182,7 @@ export class Game {
     tu.uNight.value = night;
     tu.uTime.value = this.time;
     if (this.volcano.active && this.state !== 'over') this._volcanoAir(realDt);
+    this._sandstorm(dt);
     this.debris.update(dt, this.speed * (this.state === 'over' ? 0 : 1));
     this.blasts.update(dt, this.speed * (this.state === 'over' ? 0 : 1), this.time, this.env.hemi);
     // chargers kick up a trail of dust, so you can see them coming in fast
@@ -2210,7 +2248,7 @@ export class Game {
     const dir = this.camera.getWorldDirection(this._dir);
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
     this.renderer.setHaze((1 - night) * smooth(-2, 12, this.env.sunElev), 0.5 - (0.5 * dir.y) / Math.sqrt(1 - dir.y * dir.y) / tanHalf);
-    this.audio.setWind(Math.min(1, this.speed / CFG.maxSpeed));
+    this.audio.setWind(Math.min(1, this.speed / CFG.maxSpeed), this.stormK || 0);
 
     this.flash *= Math.exp(-realDt * 4);
     this.hud.setScore(this.score, realDt);

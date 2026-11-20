@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mulberry32, createNoise } from '../gfx/noise.js';
 import { buildCactus, buildRock } from '../entities/Obstacles.js';
 import { TERRAIN_PERIOD } from './Terrain.js';
-import { buildSkeleton, buildRuins } from './Landmarks.js';
+import { buildSkeleton, buildRuins, buildOasis } from './Landmarks.js';
 
 const smooth = (a, b, x) => {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -142,6 +142,12 @@ export class Scenery {
       kind: 'landmark', geometry: buildRuins(), material: this.landmarkMat, L: P * 2, x0: -60, count: 2, rand,
       zRanges: [[-72, -38], [40, 80]], scale: [0.9, 1.15], shadow: false, sink: 0.2, yaw: true,
     });
+    // an oasis (the Desert only): its own, smoother material so the pond catches the sky
+    this.oasisMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 1.2 });
+    this._layer({
+      kind: 'oasis', geometry: buildOasis(), material: this.oasisMat, L: P * 2, x0: -200, count: 1, rand,
+      zRanges: [[-70, -46], [48, 76]], scale: [1, 1.1], shadow: false, sink: 0, yaw: true,
+    });
   }
 
   _layer({ kind = 'rock', geometry, material, L, x0, count, rand, zRanges, scale, shadow, sink = 0, yaw = false }) {
@@ -194,7 +200,7 @@ export class Scenery {
     for (const m of this.layers) {
       const k = m.userData.kind;
       // the city stands on flat paved ground: no desert props (and none floating on dunes that are gone)
-      m.userData.hidden = name === 'city' || (k === 'cactus' && name !== 'desert') || (k === 'bush' && name === 'volcano');
+      m.userData.hidden = name === 'city' || ((k === 'cactus' || k === 'oasis') && name !== 'desert') || (k === 'bush' && name === 'volcano');
     }
     this.rockMat.color.set(name === 'volcano' ? 0x8a6c62 : 0xffffff);
     this.mesaMat.color.set(name === 'volcano' ? 0x5a3028 : 0xffffff);

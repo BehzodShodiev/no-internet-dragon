@@ -1,4 +1,4 @@
-// Army-stage vehicles and projectiles: tanks, attack helicopters, tank shells and missiles.
+// Army-stage vehicles and projectiles: tanks, attack helicopters, tank shells, missiles and artillery strikes.
 // Geometry and materials are built once and shared by every pooled instance.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
@@ -200,6 +200,41 @@ export class Military {
       ...fins,
     ]);
     this.exhaustGeo = new THREE.SphereGeometry(0.1, 10, 8).scale(1.6, 1, 1);
+    // artillery: a target marker (ring and cross hairs), a heavy shell nose-down, a scorched crater
+    this.markGeo = mergeLoose([
+      new THREE.RingGeometry(0.92, 1.12, 40),
+      new THREE.RingGeometry(0.34, 0.44, 28),
+      ...[0, 1, 2, 3].map((k) => new THREE.PlaneGeometry(0.42, 0.09).translate(0.72, 0, 0).rotateZ((k * Math.PI) / 2)),
+    ].map((g) => setVertexColor(g, 0xffffff))).rotateX(-Math.PI / 2).translate(0, 0.04, 0);
+    this.markMat = new THREE.MeshBasicMaterial({ color: 0xff3a1a, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const olive = 0x3e4430;
+    this.artyGeo = mergeLoose([
+      part(cyl(0.2, 0.2, 0.9, 16), olive),
+      part(new THREE.ConeGeometry(0.2, 0.42, 16).rotateZ(Math.PI), olive, 0, -0.66, 0),
+      part(cyl(0.205, 0.205, 0.08, 16), 0xb3261e, 0, -0.3, 0), // warning band
+      ...[0, 1, 2, 3].map((k) => part(rbox(0.04, 0.32, 0.36, 0.01, 1).rotateY((k * Math.PI) / 2), 0x2c3022, 0, 0.5, 0)),
+    ]).translate(0, 0.66, 0); // nose at y = 0
+    this.craterGeo = mergeLoose([
+      setVertexColor(new THREE.CircleGeometry(1.0, 32).rotateX(-Math.PI / 2).translate(0, 0.03, 0), 0x1a1612),
+      setVertexColor(new THREE.TorusGeometry(1.0, 0.16, 8, 32).rotateX(Math.PI / 2).scale(1, 0.6, 1).translate(0, 0.06, 0), 0x4a3a2a),
+    ]);
+    this.emberGeo = mergeLoose([0, 1, 2, 3, 4].map((k) => new THREE.SphereGeometry(0.07, 8, 6).translate(Math.cos(k * 1.3) * 0.5, 0.06, Math.sin(k * 1.3) * 0.45)));
+  }
+
+  /** An artillery strike: the marker, then the shell falls on it (Obstacles drives it like a meteor). */
+  makeArtillery() {
+    const g = new THREE.Group();
+    const ring = new THREE.Mesh(this.markGeo, this.markMat.clone());
+    ring.renderOrder = 1;
+    const ball = new THREE.Mesh(this.artyGeo, this.mats.paint);
+    ball.castShadow = true;
+    const crater = new THREE.Group();
+    const floor = new THREE.Mesh(this.craterGeo, this.mats.camo);
+    floor.receiveShadow = true;
+    crater.add(floor, new THREE.Mesh(this.emberGeo, this.mats.hot));
+    g.add(ring, ball, crater);
+    g.userData = { ring, ball, crater };
+    return g;
   }
 
   makeShell() {

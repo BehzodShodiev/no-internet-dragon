@@ -228,6 +228,7 @@ export class Environment {
 
     scene.fog = new THREE.FogExp2(0xcfd8e0, 0.003);
     this.fogDensity = 0.003;
+    this.storm = 0; // the Desert's sandstorm (0..1): sand-coloured haze and a dimmer sun (set by Game)
 
     this._buildStars();
     this._buildMoon();
@@ -428,6 +429,7 @@ export class Environment {
       this.light.color.copy(sunCol);
       this.light.intensity = 6.2 * day * (1 - 0.2 * golden);
     }
+    this.light.intensity *= 1 - 0.45 * this.storm;
 
     // sky blend toward the twilight / night sky
     u.uNight.value = smooth(4, -6, elev);
@@ -471,8 +473,10 @@ export class Environment {
     fogC.lerp(twilightSky(this._tmpV, this.sunDir, deep, u.uGlow.value, (this._fogB ||= new THREE.Color())), u.uNight.value);
     fogC.lerp(this._tmpC2.setRGB(0.17, 0.12, 0.12), 0.45 * cityNight);
     fogC.lerp(this._tmpC2.setRGB(0.3, 0.11, 0.05), volc);
+    // a sandstorm: the haze turns to blowing sand (dimmer by night)
+    if (this.storm > 0) fogC.lerp(this._tmpC2.setRGB(0.74, 0.58, 0.4).multiplyScalar(0.3 + 0.7 * (1 - u.uNight.value)), 0.85 * this.storm);
     this.scene.fog.color.copy(fogC);
-    const density = THREE.MathUtils.lerp(0.0017, 0.002, viewBlend);
+    const density = THREE.MathUtils.lerp(0.0017, 0.002, viewBlend) * (1 + 6 * this.storm);
     // midday is clear air: thinner haze with the sun high (the volcano keeps its smoke)
     const noon = smooth(15, 50, elev) * (1 - volc) * (1 - city);
     this.scene.fog.density = density * (1 + 0.4 * night) * (1 - 0.35 * noon);

@@ -214,6 +214,8 @@ const DESPAWN_X = -25;
 const COLLAPSE = { building: true, tower: true };
 const WRECK_TIME = 0.9;
 export const PTERO_HEIGHTS = [0.95, 1.95, 3.2];
+// Stages where some helicopters are gunners, and the loop they start from (all from the first).
+const GUNNER_STAGES = { army: 0, siege: 0, inferno: 0 };
 const SHELL_SPEED = 16; // on top of the ground speed
 // Crystal Rush (after a gunship falls): a river of crystals and nothing to dodge
 const RUSH_STEP = 3.5; // units between crystals (sparse: every crystal also feeds the combo chain)
@@ -224,16 +226,16 @@ export const isFlyer = (type) => FLYERS.includes(type);
 // What the smash does to each type: points when it breaks, 0 = too solid (jump it), 'reflect' = batted back.
 export const SMASH = {
   cactusS: 10, cactusL: 10, ptero: 20, heli: 25, tank: 30, car: 20, tower: 40, fuel: 50, building: 50, pillar: 40, boulder: 15, jeep: 25,
-  rock: 0, hedgehog: 0, lava: 0, meteor: 0, shell: 'reflect', missile: 'reflect',
+  rock: 0, hedgehog: 0, lava: 0, meteor: 0, artillery: 0, shell: 'reflect', missile: 'reflect',
 };
 // Too tall to jump: smash it or burn it.
 export const TALL = { tower: true, fuel: true, building: true, pillar: true };
 // Can't be smashed, but nothing to clang off either: the smash just passes over.
-export const SILENT = { lava: true, meteor: true };
+export const SILENT = { lava: true, meteor: true, artillery: true };
 // How each type must be answered. 'height': by the height it flies at (see respond()). The spawner,
 // the tips and the autopilot all read this, so a new type can't be added without saying how to beat it.
 export const RESPONSE = {
-  cactusS: 'jump', cactusL: 'jump', rock: 'jump', hedgehog: 'jump', lava: 'jump', meteor: 'jump', car: 'jump', tank: 'jump',
+  cactusS: 'jump', cactusL: 'jump', rock: 'jump', hedgehog: 'jump', lava: 'jump', meteor: 'jump', artillery: 'jump', car: 'jump', tank: 'jump',
   boulder: 'jump', jeep: 'jump', // chargers: they come at you faster than the ground scrolls
   tower: 'smash', fuel: 'smash', building: 'smash', pillar: 'smash',
   ptero: 'height', heli: 'height', shell: 'height', missile: 'height',
@@ -248,11 +250,11 @@ export function respond(o) {
 // Spawn weights per stage: [type, weight, from loop] (the desert keeps Chrome's original table in
 // _pickType). Rows with a loop number only join from that loop on, so every loop adds threats.
 const TABLES = {
-  army: [['tank', 22], ['heli', 20], ['jeep', 12], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4], ['tower', 8, 1], ['tank', 8, 2], ['jeep', 6, 1]],
+  army: [['tank', 22], ['heli', 20], ['jeep', 12], ['hedgehog', 14], ['tower', 12], ['fuel', 8], ['cactusS', 12], ['cactusL', 8], ['rock', 4], ['artillery', 10], ['tower', 8, 1], ['tank', 8, 2], ['jeep', 6, 1]],
   city: [['car', 30], ['building', 30], ['heli', 18], ['hedgehog', 14], ['tank', 12, 1]],
-  siege: [['building', 22], ['tank', 20], ['heli', 18], ['car', 16], ['hedgehog', 12], ['fuel', 6], ['building', 8, 1]],
+  siege: [['building', 22], ['tank', 20], ['heli', 18], ['car', 16], ['hedgehog', 12], ['fuel', 6], ['building', 8, 1], ['artillery', 8, 1]],
   ashlands: [['lava', 22], ['rock', 16], ['boulder', 10], ['meteor', 14], ['ptero', 18], ['pillar', 14], ['meteor', 10, 1], ['boulder', 6, 1]],
-  inferno: [['tank', 16], ['heli', 16], ['jeep', 8], ['lava', 14], ['meteor', 12], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6], ['pillar', 6, 1]],
+  inferno: [['tank', 16], ['heli', 16], ['jeep', 8], ['lava', 14], ['meteor', 12], ['artillery', 8], ['tower', 10], ['fuel', 8], ['pillar', 10], ['rock', 8], ['hedgehog', 6], ['pillar', 6, 1]],
 };
 
 /** A rolling boulder: a lumpy stone ball, radius about 0.8 (the jitter is keyed on position, so the faces stay closed). */
@@ -298,7 +300,7 @@ export class Obstacles {
     this.wrecks = []; // collapsing structures (see COLLAPSE)
     this.pools = {
       cactusS: [], cactusL: [], rock: [], ptero: [], tank: [], heli: [], shell: [], missile: [],
-      tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], pillar: [], boulder: [], jeep: [],
+      tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], artillery: [], pillar: [], boulder: [], jeep: [],
     };
     this.city = null; // set by the game: builds the city's buildings and cars
     this.volcano = null; // set by the game: builds lava pools, meteors and basalt pillars
@@ -588,6 +590,21 @@ export class Obstacles {
     return o;
   }
 
+  /** An artillery strike: a target marker first, then a shell drops on it and leaves a crater to jump. */
+  _spawnArtillery() {
+    const o = this._acquire('artillery');
+    const { ring, ball, crater } = this._model(o, () => this.mil.makeArtillery()).userData;
+    ring.visible = true;
+    ball.visible = false;
+    crater.visible = false;
+    o.landed = false;
+    o.fallT = -1;
+    o.boxes.length = 0; // harmless until it lands
+    o.width = 2.3;
+    o.vx = 0;
+    return o;
+  }
+
   _spawnPillar() {
     const o = this._acquire('pillar');
     this._model(o, () => this.volcano.makePillar());
@@ -608,8 +625,11 @@ export class Obstacles {
     o.fallT += dt;
     const k = Math.min(1, o.fallT);
     ball.visible = true;
-    ball.position.set(9 * (1 - k), 0.6 + 17 * (1 - k), 0);
-    ball.rotation.x += dt * 6;
+    if (o.type === 'artillery') ball.position.set(1.5 * (1 - k), 20 * (1 - k) * (1 - k * 0.3), 0); // a shell from high up, nose first
+    else {
+      ball.position.set(9 * (1 - k), 0.6 + 17 * (1 - k), 0);
+      ball.rotation.x += dt * 6;
+    }
     if (k < 1) return;
     o.landed = true;
     ball.visible = false;
@@ -725,14 +745,23 @@ export class Obstacles {
     return o;
   }
 
-  _spawnHeli(speed) {
+  /**
+   * gunner: it hovers at the top height (run under it) and, like a shooting tank, fires one shell that
+   * drops to jump or duck height, after a 0.75 s warning. The spawner keeps the track clear in front of it.
+   */
+  _spawnHeli(speed, gunner = false) {
     const o = this._acquire('heli');
     this._model(o, () => this.mil.makeHeli());
-    o.y = PTERO_HEIGHTS[Math.floor(this.rand() * PTERO_HEIGHTS.length)];
+    o.y = gunner ? PTERO_HEIGHTS[2] : PTERO_HEIGHTS[Math.floor(this.rand() * PTERO_HEIGHTS.length)];
     o.boxes.length = 0;
     o.boxes.push([-0.9, -0.15, 0.9, 0.35]);
     o.width = 2.0;
-    o.vx = speed > 16 ? 1.8 + this.rand() * 2.0 : 0.8;
+    o.vx = gunner ? 0 : speed > 16 ? 1.8 + this.rand() * 2.0 : 0.8;
+    o.shooter = gunner;
+    o.fired = false;
+    o.aim = 0;
+    o.fireX = 2.4 * speed;
+    o.shellY = this.rand() < 0.5 ? PTERO_HEIGHTS[0] : PTERO_HEIGHTS[1];
     return o;
   }
 
@@ -753,12 +782,14 @@ export class Obstacles {
     return o;
   }
 
-  spawnShell(x, y) {
+  /** A shell flying at height ty; from a gunner it starts at y0 (its nose) and drops to ty at once. */
+  spawnShell(x, ty, y0 = ty) {
     const o = this._acquire('shell');
     this._model(o, () => this.mil.makeShell());
     o.projectile = true;
     o.x = x;
-    o.y = y;
+    o.y = y0;
+    o.ty = ty;
     o.vx = SHELL_SPEED;
     o.width = 0.6;
     o.boxes.length = 0;
@@ -800,7 +831,7 @@ export class Obstacles {
         // missiles hold their closing speed whatever the ground does, and drop to their flight level
         o.vx = o.vm - speed;
         o.y += (o.ty - o.y) * (1 - Math.exp(-dt * 10));
-      }
+      } else if (o.type === 'shell' && o.ty != null) o.y += (o.ty - o.y) * (1 - Math.exp(-dt * 12)); // a gunner's shell drops to its height
       o.x -= (speed + o.vx) * dt;
       o.t += dt;
       o.group.position.set(o.x, o.y + (o.z0 && (o.type === 'heli' || o.type === 'ptero') ? 3 * smooth(50, 110, o.x) * hard : 0), o.z0 ? o.z0 * smooth(50, 110, o.x) * hard : 0);
@@ -811,9 +842,9 @@ export class Obstacles {
         o.parts[0].position.y = o.r + Math.abs(Math.sin(o.t * 9)) * 0.06;
       } else if (o.type === 'jeep') o.group.rotation.z = Math.sin(o.t * 23) * 0.012; // bouncing over the sand
       if (o.type === 'ptero') this._animatePtero(o);
-      else if (o.type === 'heli') this._animateHeli(o);
+      else if (o.type === 'heli') { this._animateHeli(o); if (o.shooter) this._updateGunner(o, dt, speed); }
       else if (o.type === 'tank') this._updateTank(o, dt, speed);
-      else if (o.type === 'meteor') this._updateMeteor(o, dt, speed);
+      else if (o.type === 'meteor' || o.type === 'artillery') this._updateMeteor(o, dt, speed);
       if (o.dead && COLLAPSE[o.type] && o.x > DESPAWN_X) {
         this.active.splice(i, 1);
         o.wreckT = 0;
@@ -889,7 +920,7 @@ export class Obstacles {
     let type;
     let item = null; // a set-piece item
     let piece = null; // the set piece that starts with this spawn
-    if (this.pendingShooter) type = 'tank';
+    if (this.pendingShooter) type = this.pendingShooter; // 'tank' or 'heli', held back for room to fire
     else {
       piece = dir.start(this.stage, speed, this.cycle, this.rand);
       item = dir.queue.shift() || null;
@@ -903,13 +934,18 @@ export class Obstacles {
     }
 
     let shooter = false;
-    if (type === 'tank' && !item) { // set-piece tanks never fire: the convoy itself is the threat
-      shooter = this.pendingShooter || this.rand() < Math.min(0.8, 0.45 + 0.1 * (this.cycle + this.levelTight));
-      // A shooting tank needs the track between it and the dragon clear by the time it fires, so the
+    // set-piece tanks never fire: the convoy itself is the threat. Gunner helicopters fly with the army
+    // (Army Outpost, City Siege, Inferno Fortress).
+    const gunnerOk = type === 'heli' && GUNNER_STAGES[this.stage] != null && this.cycle >= GUNNER_STAGES[this.stage];
+    if ((type === 'tank' || gunnerOk) && !item) {
+      shooter = !!this.pendingShooter || this.rand() < (type === 'tank'
+        ? Math.min(0.8, 0.45 + 0.1 * (this.cycle + this.levelTight))
+        : Math.min(0.5, 0.25 + 0.08 * (this.cycle + this.levelTight)));
+      // A shooter needs the track between it and the dragon clear by the time it fires, so the
       // shell is the only thing to react to. Hold the spawn back until there is that much room.
       const need = 2.4 * speed + 4;
       if (shooter && !this.pendingShooter && freeSpace < need && this.firstSpawnX == null) {
-        this.pendingShooter = true;
+        this.pendingShooter = type;
         this.nextGap = need;
         return;
       }
@@ -920,7 +956,7 @@ export class Obstacles {
 
     let o;
     if (type === 'ptero') o = this._spawnPtero(speed);
-    else if (type === 'heli') o = this._spawnHeli(speed);
+    else if (type === 'heli') o = this._spawnHeli(speed, shooter);
     else if (type === 'tank') o = this._spawnTank(speed, shooter);
     else if (type === 'rock') o = this._spawnRock();
     else if (type === 'tower' || type === 'fuel' || type === 'hedgehog') o = this._spawnStructure(type);
@@ -928,6 +964,7 @@ export class Obstacles {
     else if (type === 'car') o = this._spawnCar(item?.jam ? (speed >= 18 ? 3 : 2) : 0);
     else if (type === 'lava') o = this._spawnLava();
     else if (type === 'meteor') o = this._spawnMeteor();
+    else if (type === 'artillery') o = this._spawnArtillery();
     else if (type === 'pillar') o = this._spawnPillar();
     else if (type === 'boulder') o = this._spawnBoulder(speed);
     else if (type === 'jeep') o = this._spawnJeep(speed);
@@ -936,8 +973,9 @@ export class Obstacles {
       o = this._spawnCactus(type, item?.n ? Math.min(item.n, maxCount) : 1 + Math.floor(this.rand() * maxCount));
     }
     if (piece) this.onPiece?.(piece, o);
-    const flyer = type === 'ptero' || type === 'heli';
-    if (!flyer) o.y = 0;
+    const airborne = type === 'ptero' || type === 'heli';
+    const flyer = airborne && !o.shooter; // flies in faster than the ground (a gunner hovers in place, like a tank)
+    if (!airborne) o.y = 0;
     o.x = (this.firstSpawnX ?? SPAWN_X) + o.width / 2;
     this.firstSpawnX = null;
     // 3D: traffic, tanks and flyers can come in from the side; they lock onto the track by x = 50, long
@@ -973,7 +1011,7 @@ export class Obstacles {
       this.nextGap = minGap + (a + this.rand() * (b - a)) * (maxGap - minGap);
     }
     // crystal arcs ride with the ground; a charger would outrun its own and break the combo, so it gets none
-    if (!flyer && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed, long);
+    if (!airborne && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed, long);
   }
 
   /** Lays one crystal pattern on or after a ground obstacle, shaped by the dragon's real jump. */
@@ -1016,6 +1054,20 @@ export class Obstacles {
       const c = (start + end) / 2; // high trio: worth an extra jump in the gap, if there's time
       for (let k = -1; k <= 1; k++) cr.add(c + k * 0.09 * speed, arcY(k * 0.09 * speed), 0, true);
     }
+  }
+
+  /** A gunner helicopter: noses down to aim (with the warning), then fires its shell from the nose. */
+  _updateGunner(o, dt, speed) {
+    if (!o.fired && o.x < o.fireX + 0.75 * speed) {
+      o.aim = Math.min(1, o.aim + dt * 3);
+      this.warnings.push({ x: o.x - 1.6, y: o.shellY });
+      if (o.x <= o.fireX) {
+        o.fired = true;
+        this.spawnShell(o.x - 1.3, o.shellY, o.y - 0.2);
+        this.onFire?.(o);
+      }
+    } else if (o.fired) o.aim = Math.max(0, o.aim - dt * 1.5);
+    o.model.rotation.z = 0.28 * o.aim; // nose down toward the track
   }
 
   _updateTank(o, dt, speed) {

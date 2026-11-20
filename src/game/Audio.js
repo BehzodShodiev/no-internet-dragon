@@ -255,9 +255,10 @@ export class AudioEngine {
     this.windGain = g;
   }
 
-  setWind(speedFactor) {
+  /** storm: the Desert's sandstorm (0..1) howls on top of the running wind. */
+  setWind(speedFactor, storm = 0) {
     if (!this.ctx) return;
-    this.windGain.gain.setTargetAtTime(0.03 + speedFactor * 0.05, this.ctx.currentTime, 0.5);
+    this.windGain.gain.setTargetAtTime(0.03 + speedFactor * 0.05 + storm * 0.16, this.ctx.currentTime, 0.5);
   }
 
   footstep(intensity = 1) {
