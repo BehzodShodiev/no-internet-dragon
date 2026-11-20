@@ -1,4 +1,4 @@
-// Hitbox parity between the standard and detailed (Very High) Kaiju: both models are driven through the
+// Hitbox parity between the standard and detailed (Very High) models of the Kaiju and the Jade Hydra: each pair is driven through the
 // same run, duck, jump and death poses and every hitbox must match exactly (they share one skeleton).
 //   node tools/hdparity.mjs [--url URL]
 import { Session } from './lib/cdp.mjs';
@@ -9,9 +9,12 @@ const { url, close } = await serve(A.url);
 const s = await Session.launch({ w: 640, h: 360 });
 await s.navigate(url);
 if (!(await s.waitState('title', 120000))) { console.log('no title'); process.exit(1); }
+const results = [];
+for (const variant of ['kaiju', 'ghidorah']) {
 const r = await s.evaluate(`(async () => {
   const g = window.__game, D = g.dragon.constructor;
-  const a = new D(g.tex.scales, 'kaiju', 'std'), b = new D(g.tex.scales, 'kaiju', 'hd');
+  const a = new D(g.tex.scales, '${variant}', 'std'), b = new D(g.tex.scales, '${variant}', 'hd');
+  if (b.detail !== 'hd') return 'no detailed model';
   const boxes = () => Array.from({ length: 8 }, () => new Float32Array(4));
   const ba = boxes(), bb = boxes();
   const phases = [
@@ -33,11 +36,13 @@ const r = await s.evaluate(`(async () => {
     }
   }
   const tris = (d) => d.group.children.reduce((n, m) => n + (m.geometry ? (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 : 0), 0);
-  const out = 'frames ' + frames + ', worst difference ' + worst + ', triangles std ' + tris(a) + ' hd ' + tris(b);
+  const out = '${variant}: frames ' + frames + ', worst difference ' + worst + ', triangles std ' + tris(a) + ' hd ' + tris(b);
   a.dispose(); b.dispose();
   return out;
 })()`);
 console.log(r);
+results.push(r);
+}
 await s.close();
 await close();
-process.exit(/worst difference 0,/.test(r) ? 0 : 1);
+process.exit(results.every((r) => /worst difference 0,/.test(r)) ? 0 : 1);

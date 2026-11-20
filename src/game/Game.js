@@ -7,7 +7,7 @@ import { AudioEngine } from './Audio.js';
 import { HUD } from './HUD.js';
 import { Leaderboard } from './Leaderboard.js';
 import { Stages, LEVELS } from './Stages.js';
-import { Dragon, DRAGON_SCALE } from '../entities/Dragon.js';
+import { Dragon, DRAGON_SCALE, HD_VARIANTS } from '../entities/Dragon.js';
 import { Moth } from '../entities/Moth.js';
 import { Obstacles, SMASH, SILENT } from '../entities/Obstacles.js';
 import { Crystals } from '../entities/Crystals.js';
@@ -1017,7 +1017,7 @@ export class Game {
   }
 
   /**
-   * Swaps the monster models to the preset's detail level (the detailed Kaiju on Very High). Only on menus:
+   * Swaps the monster models to the preset's detail level (the detailed Kaiju and Hydra on Very High). Only on menus:
    * a change during a run waits for it to end. The new model's shaders compile in the background.
    */
   _applyModels() {
@@ -1027,7 +1027,7 @@ export class Game {
     this.modelDetail = want;
     for (const id of Object.keys(this.dragons)) {
       const old = this.dragons[id];
-      if (!(old instanceof Dragon) || old.variant !== 'kaiju') continue; // only the Kaiju has a detailed model so far
+      if (!(old instanceof Dragon) || !HD_VARIANTS.has(old.variant)) continue; // the Kaiju and the Hydra have detailed models
       const d = this._buildMonster(MONSTERS.find((x) => x.id === id));
       d.group.position.copy(old.group.position);
       d.group.visible = old.group.visible;

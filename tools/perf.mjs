@@ -18,9 +18,10 @@ const SCENES = {
   'city-siege-3d': { level: 1, view: '3d', quality: 'high', after: 'g.dist = 361;' },
   'volcano-boss-3d': { level: 2, view: '3d', quality: 'high', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }' },
   'desert-night-2d': { level: 0, view: '2d', quality: 'high', day: 0.66 },
-  // Very High: 1.5x supersampled, 4096 shadows and the detailed Kaiju (manual only, so no frame budget)
+  // Very High: 1.5x supersampled, 4096 shadows and the detailed models (manual only, so no frame budget)
   'desert-noon-3d-vh': { level: 0, view: '3d', quality: 'veryhigh', day: 0.25, budgetless: true },
   'volcano-boss-3d-vh': { level: 2, view: '3d', quality: 'veryhigh', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }', budgetless: true },
+  'volcano-boss-3d-vh-hydra': { level: 2, view: '3d', quality: 'veryhigh', monster: 'ghidorah', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }', budgetless: true },
   'phone-medium': { level: 0, view: '3d', quality: 'medium', day: 0.25, screen: { w: 844, h: 390, dpr: 2, mobile: true }, budgetless: true },
 };
 const pick = A.scenes ? String(A.scenes).split(',') : Object.keys(SCENES);
@@ -40,7 +41,7 @@ for (const name of pick) {
   const load = await s.evaluate('JSON.stringify(window.__loadTimes)').then((j) => JSON.parse(j || '[]'));
   await s.evaluate(`(() => { const g = window.__game; g.selectLevel(${sc.level}, true);
     g.rig.setMode('${sc.view}'); g.rig.raw = g.rig.blend = ${sc.view === '3d' ? 1 : 0}; g.hud.setView('${sc.view}');
-    g._setQuality('${sc.quality}', false); g.selectMonster('kaiju'); return true; })()`);
+    g._setQuality('${sc.quality}', false); g.selectMonster('${sc.monster || 'kaiju'}', true); return true; })()`);
   await s.evaluate('window.__game._onJump()');
   await s.waitState('running', 30000);
   await s.evaluate(bot);

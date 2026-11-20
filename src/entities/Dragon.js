@@ -1,7 +1,7 @@
 // Procedural, skinned giant lizards (the Kaiju, the Jade Hydra, the Rex). Built in "design units" and scaled into world units.
 // Legs are driven by analytic 2-bone IK so feet plant on the ground while running.
 import * as THREE from 'three';
-import { sweep, mergeGeometries } from '../gfx/geometry.js';
+import { sweep, mergeGeometries, mergeVertices } from '../gfx/geometry.js';
 import { noise3, curvedSpike, spikeColors } from './DragonHD.js';
 import { crystalCluster } from './BackCrystals.js';
 import { mulberry32 } from '../gfx/noise.js';
@@ -54,16 +54,19 @@ const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
 const bump = (x, c, w) => Math.exp(-(((x - c) / w) ** 2));
 const sgnPow = (v, p) => Math.sign(v) * Math.abs(v) ** p;
 
+/** Variants with a detailed (Very High) model. */
+export const HD_VARIANTS = new Set(['kaiju', 'ghidorah']);
+
 export class Dragon {
   /**
    * variant: 'kaiju' (the crystal-backed lizard), 'ghidorah' (the Jade Hydra: three heads, wings, horns) or 'rex'
    * (big head, tiny arms, no plates; with a second, voxel look that its Pixel skin shows).
-   * detail: 'std', or 'hd' for the Very High model (Kaiju only): same skeleton, animation and hitboxes,
+   * detail: 'std', or 'hd' for the Very High model (the Kaiju and the Hydra, HD_VARIANTS): same skeleton, animation and hitboxes,
    * with real anatomy, a carved head and more back crystals.
    */
   constructor(tex, variant = 'kaiju', detail = 'std') {
     this.variant = variant;
-    this.detail = variant === 'kaiju' ? detail : 'std';
+    this.detail = HD_VARIANTS.has(variant) ? detail : 'std';
     this.group = new THREE.Group();
     this.group.name = 'dragon';
     this.group.scale.setScalar(DRAGON_SCALE);
@@ -502,26 +505,10 @@ export class Dragon {
 
     // ---------------- the Jade Hydra: side necks and heads, wings, a ridge of spines ----------------
     if (hydra) {
-      this._buildGhidorah({ makeHead, tilt, backCol, midCol, bellyCol });
-      // short curved spines from the tail to the back of the neck, tips raked back
-      const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3(), Z = V(0, 0, 1);
-      const a0 = tk[0] + 0.03, a1 = tk[8], n = 26;
-      for (let i = 0; i < n; i++) {
-        const k = i / (n - 1), t = a0 + (a1 - a0) * k;
-        this.curve.getPointAt(t, P);
-        this.curve.getTangentAt(t, T);
-        N.crossVectors(Z, T).normalize();
-        const len = 0.1 + 0.24 * Math.sin(Math.min(1, k * 1.15) * Math.PI) ** 0.8;
-        const g = curvedSpike(len, len * 0.32, -0.45, 6, 4);
-        g.rotateZ(Math.atan2(T.y, T.x));
-        g.translate(P.x + N.x * profile(tk, RY, t) * 0.9, P.y + N.y * profile(tk, RY, t) * 0.9, P.z);
-        const sk = this.spineSkin(t), m = g.attributes.position.count;
-        const si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
-        for (let j = 0; j < m; j++) { si[j * 4] = sk[0]; si[j * 4 + 1] = sk[1]; sw[j * 4] = sk[2]; sw[j * 4 + 1] = sk[3]; }
-        g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
-        g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
-        teeth.push(g);
-      }
+      // the side heads: the same head builder, rigid (they ride on their own necks)
+      const sideHead = (toWorld) => { const h = makeHead(toWorld, -1, -1, true); return { skin: [h.skull, h.jaw], keratin: h.teeth, eyes: h.eyes, dark: [] }; };
+      this._buildGhidorah({ makeHead: sideHead, tilt, backCol, midCol, bellyCol });
+      teeth.push(...this._hydraSpines());
     }
 
     // ---------------- back crystals (the Kaiju only) ----------------
@@ -589,23 +576,27 @@ export class Dragon {
   }
 
   /**
-   * The Very High Kaiju. Same spine, bones and proportions as _buildMeshes (so the same animation and
+   * The Very High Kaiju and Jade Hydra. Same spine, bones and proportions as _buildMeshes (so the same animation and
    * hitboxes), with anatomy and surface: haunch and shoulder masses, a dorsal keel, banded belly plates
    * and throat folds; muscled legs with heavy clawed toes; real arms and four-fingered hands; a carved
    * head with brows, sockets, lidded slit-pupil eyes, nostrils, curved teeth and a tongue; mottled
-   * colouring; more, finer back crystals.
+   * colouring; more, finer back crystals. The Hydra: the same body and heads in jade, three carved heads,
+   * ridged horns, spines on the back and the side necks, and billowing veined wings (_wingGeometryHD).
    */
   _buildMeshesHD() {
     const tk = this.tk;
     const L = this.curve.getLength();
-    const backCol = new THREE.Color(0x2c332d);
-    const midCol = new THREE.Color(0x47504a);
-    const bellyCol = new THREE.Color(0x9a8e78);
+    // the Jade Hydra: deep jade with a sage belly, dark horn-coloured spines and horns
+    const hydra = this.variant === 'ghidorah';
+    const backCol = new THREE.Color(hydra ? 0x173d31 : 0x2c332d);
+    const midCol = new THREE.Color(hydra ? 0x2a6650 : 0x47504a);
+    const bellyCol = new THREE.Color(hydra ? 0xb3c294 : 0x9a8e78);
     const mouthCol = new THREE.Color(0x4a1414);
     const gumCol = new THREE.Color(0x7a2a2a);
     const tongueCol = new THREE.Color(0x8c3a3c);
     const ivory = new THREE.Color(0xeee3c8), ivoryRoot = new THREE.Color(0xb3a079);
     const hornRoot = new THREE.Color(0x2a2622), hornTip = new THREE.Color(0x9a8f7c);
+    const hornBase = new THREE.Color(0x1e2b24); // the Hydra's horns and spines: dark at the root, bone at the tip
     const rnd = mulberry32(31);
     const skinGeos = [], keratin = [], dark = [], eyes = [];
     const rigged = (g, bone) => { skinRigid(g, bone); return g; };
@@ -763,7 +754,6 @@ export class Dragon {
     const hp = this.rest[B.head];
     const tilt = new THREE.Matrix4().makeRotationZ(HEAD_TILT);
     const mouthY = (x) => -0.1 - 0.06 * x;
-    const toWorld = (g) => g.applyMatrix4(tilt).translate(hp.x, hp.y, hp.z);
     const line = (x0, x1, n) => Array.from({ length: n }, (_, i) => { const x = x0 + ((x1 - x0) * i) / (n - 1); return V(x, mouthY(x)); });
     const sH = [[-0.44, -0.05, 0.3, 0.7, 1.05, 1.3, 1.4], [0.44, 0.56, 0.6, 0.46, 0.36, 0.27, 0.1]];
     const sW = [[-0.44, -0.05, 0.3, 0.7, 1.05, 1.3, 1.4], [0.4, 0.45, 0.38, 0.31, 0.27, 0.22, 0.1]];
@@ -785,93 +775,125 @@ export class Dragon {
     };
     const SX0 = -0.44, SX1 = 1.4;
     const lipC = backCol.clone().lerp(midCol, 0.3);
-    skinGeos.push(rigged(toWorld(sweep({
-      points: line(SX0, SX1, 8),
-      segments: 96, radial: 64, uvScale: [4.2, 3.4], curveType: 'catmullrom',
-      section: (t, a, out) => skullSec(SX0 + (SX1 - SX0) * t, a, out),
-      color: (t, a, out) => {
-        const x = SX0 + (SX1 - SX0) * t, c = Math.cos(a), af = fold(a);
-        if (c < -0.55) { out.copy(mouthCol); return; } // palate
-        out.copy(backCol).lerp(midCol, smooth(0.85, 0.2, c) * 0.6).lerp(lipC, smooth(0.1, -0.4, c));
-        out.multiplyScalar(1 - 0.45 * bump(x, EYE_X, 0.1) * bump(af, EYE_A, 0.22)); // shadowed sockets
-        out.multiplyScalar(1 - 0.5 * bump(x, NOSE_X, 0.04) * bump(af, NOSE_A, 0.08)); // nostril pits
-        mottle(out, x * 2, c, Math.sin(a));
-      },
-      capEnd: true,
-    })), B.head));
+    /**
+     * A whole detailed head through toWorld: skull, lidded slit-pupil eyes, nostrils, jaw, tongue, teeth and,
+     * with horns, the Hydra's ridged horns. Bones < 0 build it rigid (the Hydra's side heads).
+     */
+    const makeHead = (toWorld, headBone, jawBone, horns = false) => {
+      const rig = (g, bone) => (bone >= 0 ? rigged(g, bone) : g);
+      const out = { skin: [], keratin: [], dark: [], eyes: [] };
+      out.skin.push(rig(toWorld(sweep({
+        points: line(SX0, SX1, 8),
+        segments: 96, radial: 64, uvScale: [4.2, 3.4], curveType: 'catmullrom',
+        section: (t, a, out) => skullSec(SX0 + (SX1 - SX0) * t, a, out),
+        color: (t, a, out) => {
+          const x = SX0 + (SX1 - SX0) * t, c = Math.cos(a), af = fold(a);
+          if (c < -0.55) { out.copy(mouthCol); return; } // palate
+          out.copy(backCol).lerp(midCol, smooth(0.85, 0.2, c) * 0.6).lerp(lipC, smooth(0.1, -0.4, c));
+          out.multiplyScalar(1 - 0.45 * bump(x, EYE_X, 0.1) * bump(af, EYE_A, 0.22)); // shadowed sockets
+          out.multiplyScalar(1 - 0.5 * bump(x, NOSE_X, 0.04) * bump(af, NOSE_A, 0.08)); // nostril pits
+          mottle(out, x * 2, c, Math.sin(a));
+        },
+        capEnd: true,
+      })), headBone));
 
-    // eyes: an amber eyeball under a heavy lid, with a black slit pupil; nostrils
-    for (const side of [1, -1]) {
-      const sec = { x: 0, y: 0 };
-      skullSec(EYE_X, side > 0 ? EYE_A : 2 * Math.PI - EYE_A, sec);
-      const nrm = V(0, Math.cos(EYE_A), Math.sin(EYE_A) * side);
-      const look = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), nrm);
-      const ctr = V(EYE_X, mouthY(EYE_X) + sec.y, sec.x).addScaledVector(nrm, -0.012);
-      eyes.push(rigged(toWorld(new THREE.SphereGeometry(0.062, 20, 14).scale(1.15, 0.9, 1).translate(ctr.x, ctr.y, ctr.z)), B.head));
-      const pc = ctr.clone().addScaledVector(nrm, 0.058);
-      const pupil = new THREE.SphereGeometry(0.015, 10, 8).scale(0.75, 2.6, 0.45).applyQuaternion(look);
-      dark.push(rigged(toWorld(pupil.translate(pc.x + 0.008, pc.y, pc.z)), B.head));
-      const lc = ctr.clone().addScaledVector(nrm, 0.018);
-      const lid = new THREE.TorusGeometry(0.07, 0.024, 10, 28).scale(1.15, 0.85, 1).applyQuaternion(look);
-      skinGeos.push(rigged(toWorld(paint(lid.translate(lc.x, lc.y + 0.006, lc.z), backCol.clone().multiplyScalar(0.85))), B.head));
-      const ns = { x: 0, y: 0 };
-      skullSec(NOSE_X, side > 0 ? NOSE_A : 2 * Math.PI - NOSE_A, ns);
-      const nostril = new THREE.SphereGeometry(0.02, 10, 8).scale(1.3, 0.55, 0.8);
-      dark.push(rigged(toWorld(nostril.translate(NOSE_X, mouthY(NOSE_X) + ns.y - 0.005, ns.x * 0.92)), B.head));
-    }
+      // eyes: an amber eyeball under a heavy lid, with a black slit pupil; nostrils
+      for (const side of [1, -1]) {
+        const sec = { x: 0, y: 0 };
+        skullSec(EYE_X, side > 0 ? EYE_A : 2 * Math.PI - EYE_A, sec);
+        const nrm = V(0, Math.cos(EYE_A), Math.sin(EYE_A) * side);
+        const look = new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), nrm);
+        const ctr = V(EYE_X, mouthY(EYE_X) + sec.y, sec.x).addScaledVector(nrm, -0.012);
+        out.eyes.push(rig(toWorld(new THREE.SphereGeometry(0.062, 20, 14).scale(1.15, 0.9, 1).translate(ctr.x, ctr.y, ctr.z)), headBone));
+        const pc = ctr.clone().addScaledVector(nrm, 0.058);
+        const pupil = new THREE.SphereGeometry(0.015, 10, 8).scale(0.75, 2.6, 0.45).applyQuaternion(look);
+        out.dark.push(rig(toWorld(pupil.translate(pc.x + 0.008, pc.y, pc.z)), headBone));
+        const lc = ctr.clone().addScaledVector(nrm, 0.018);
+        const lid = new THREE.TorusGeometry(0.07, 0.024, 10, 28).scale(1.15, 0.85, 1).applyQuaternion(look);
+        out.skin.push(rig(toWorld(paint(lid.translate(lc.x, lc.y + 0.006, lc.z), backCol.clone().multiplyScalar(0.85))), headBone));
+        const ns = { x: 0, y: 0 };
+        skullSec(NOSE_X, side > 0 ? NOSE_A : 2 * Math.PI - NOSE_A, ns);
+        const nostril = new THREE.SphereGeometry(0.02, 10, 8).scale(1.3, 0.55, 0.8);
+        out.dark.push(rig(toWorld(nostril.translate(NOSE_X, mouthY(NOSE_X) + ns.y - 0.005, ns.x * 0.92)), headBone));
+      }
 
-    // lower jaw: deep chin and throat, gums on top
-    const JX0 = -0.3, JX1 = 1.33;
-    const jD = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.46, 0.4, 0.32, 0.26, 0.2, 0.07]];
-    const jW = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.4, 0.37, 0.3, 0.25, 0.19, 0.08]];
-    const throatC = midCol.clone().lerp(bellyCol, 0.55);
-    skinGeos.push(rigged(toWorld(sweep({
-      points: line(JX0, JX1, 8),
-      segments: 80, radial: 56, uvScale: [3.8, 3.0], curveType: 'catmullrom',
-      section: (t, a, out) => {
-        const x = JX0 + (JX1 - JX0) * t, c = Math.cos(a), s = Math.sin(a);
-        const d = profile(jD[0], jD[1], x), w = profile(jW[0], jW[1], x);
-        const chin = bump(x, 1.12, 0.12) * 0.02 * Math.max(0, -c);
-        out.x = sgnPow(s, 0.8) * w * (c > 0 ? 0.93 : 1) * (1 + 0.04 * bump(x, -0.1, 0.2));
-        out.y = c >= 0 ? c * 0.025 - 0.012 : -sgnPow(-c, 0.85) * (d + chin);
-      },
-      color: (t, a, out) => {
-        const c = Math.cos(a);
-        if (c > 0.35 && t < 0.95) { out.copy(gumCol); return; }
-        out.copy(midCol).lerp(throatC, smooth(-0.2, -0.85, c));
-        mottle(out, t * 3, c, Math.sin(a), 0.8);
-      },
-      capEnd: true,
-    })), B.jaw));
-    // a tongue lying in the jaw
-    skinGeos.push(rigged(toWorld(sweep({
-      points: line(-0.15, 0.95, 5).map((p) => p.add(V(0, -0.045))),
-      segments: 20, radial: 16, uvScale: [0.6, 0.4],
-      section: (t, a, out) => { const w = 0.13 * (1 - 0.6 * t * t); out.x = Math.sin(a) * w; out.y = Math.cos(a) * 0.035 * (1 - 0.5 * t); },
-      color: (t, a, out) => out.copy(tongueCol),
-      capStart: true, capEnd: true,
-    })), B.jaw));
+      // lower jaw: deep chin and throat, gums on top
+      const JX0 = -0.3, JX1 = 1.33;
+      const jD = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.46, 0.4, 0.32, 0.26, 0.2, 0.07]];
+      const jW = [[-0.3, 0.1, 0.6, 1.0, 1.24, 1.33], [0.4, 0.37, 0.3, 0.25, 0.19, 0.08]];
+      const throatC = midCol.clone().lerp(bellyCol, 0.55);
+      out.skin.push(rig(toWorld(sweep({
+        points: line(JX0, JX1, 8),
+        segments: 80, radial: 56, uvScale: [3.8, 3.0], curveType: 'catmullrom',
+        section: (t, a, out) => {
+          const x = JX0 + (JX1 - JX0) * t, c = Math.cos(a), s = Math.sin(a);
+          const d = profile(jD[0], jD[1], x), w = profile(jW[0], jW[1], x);
+          const chin = bump(x, 1.12, 0.12) * 0.02 * Math.max(0, -c);
+          out.x = sgnPow(s, 0.8) * w * (c > 0 ? 0.93 : 1) * (1 + 0.04 * bump(x, -0.1, 0.2));
+          out.y = c >= 0 ? c * 0.025 - 0.012 : -sgnPow(-c, 0.85) * (d + chin);
+        },
+        color: (t, a, out) => {
+          const c = Math.cos(a);
+          if (c > 0.35 && t < 0.95) { out.copy(gumCol); return; }
+          out.copy(midCol).lerp(throatC, smooth(-0.2, -0.85, c));
+          mottle(out, t * 3, c, Math.sin(a), 0.8);
+        },
+        capEnd: true,
+      })), jawBone));
+      // a tongue lying in the jaw
+      out.skin.push(rig(toWorld(sweep({
+        points: line(-0.15, 0.95, 5).map((p) => p.add(V(0, -0.045))),
+        segments: 20, radial: 16, uvScale: [0.6, 0.4],
+        section: (t, a, out) => { const w = 0.13 * (1 - 0.6 * t * t); out.x = Math.sin(a) * w; out.y = Math.cos(a) * 0.035 * (1 - 0.5 * t); },
+        color: (t, a, out) => out.copy(tongueCol),
+        capStart: true, capEnd: true,
+      })), jawBone));
 
-    // teeth: curved and uneven, big canines near the front, a second large pair mid-jaw
-    for (let i = 0; i < 12; i++) {
-      const x = 0.1 + i * 0.1;
-      const big = Math.max(bump(x, 1.0, 0.07), 0.6 * bump(x, 0.5, 0.05));
-      const zU = profile(sW[0], sW[1], x) * 0.88;
-      for (const s of [1, -1]) {
-        const len = (0.08 + 0.11 * big) * (0.85 + 0.3 * rnd());
-        const tooth = spikeColors(curvedSpike(len, 0.024 + 0.014 * big, 0.35, 8, 6), len, ivoryRoot, ivory).rotateZ(Math.PI);
-        keratin.push(rigged(toWorld(tooth.translate(x, mouthY(x) + 0.01, zU * s)), B.head));
-        if (i % 2 === 0 && x > 0.15 && x < 1.2) {
-          const lx = x + 0.05;
-          const ll = (0.07 + 0.06 * bump(lx, 0.95, 0.1)) * (0.85 + 0.3 * rnd());
-          const lo = spikeColors(curvedSpike(ll, 0.022, -0.3, 8, 6), ll, ivoryRoot, ivory);
-          keratin.push(rigged(toWorld(lo.translate(lx, mouthY(lx) - 0.01, profile(jW[0], jW[1], lx) * 0.82 * s)), B.jaw));
+      // teeth: curved and uneven, big canines near the front, a second large pair mid-jaw
+      for (let i = 0; i < 12; i++) {
+        const x = 0.1 + i * 0.1;
+        const big = Math.max(bump(x, 1.0, 0.07), 0.6 * bump(x, 0.5, 0.05));
+        const zU = profile(sW[0], sW[1], x) * 0.88;
+        for (const s of [1, -1]) {
+          const len = (0.08 + 0.11 * big) * (0.85 + 0.3 * rnd());
+          const tooth = spikeColors(curvedSpike(len, 0.024 + 0.014 * big, 0.35, 8, 6), len, ivoryRoot, ivory).rotateZ(Math.PI);
+          out.keratin.push(rig(toWorld(tooth.translate(x, mouthY(x) + 0.01, zU * s)), headBone));
+          if (i % 2 === 0 && x > 0.15 && x < 1.2) {
+            const lx = x + 0.05;
+            const ll = (0.07 + 0.06 * bump(lx, 0.95, 0.1)) * (0.85 + 0.3 * rnd());
+            const lo = spikeColors(curvedSpike(ll, 0.022, -0.3, 8, 6), ll, ivoryRoot, ivory);
+            out.keratin.push(rig(toWorld(lo.translate(lx, mouthY(lx) - 0.01, profile(jW[0], jW[1], lx) * 0.82 * s)), jawBone));
+          }
         }
       }
+
+      // horns: a long pair sweeping back from behind the brow, curling up at the tips, and a short pair below
+      if (horns) {
+        for (const s of [1, -1]) {
+          for (const [x, yk, z, len, r, pitch, splay] of [[0.02, 0.92, 0.2, 0.84, 0.075, 1.25, 0.32], [-0.18, 0.45, 0.36, 0.36, 0.05, 1.5, 0.55]]) {
+            const hn = spikeColors(curvedSpike(len, r, 0.32, 12, 24, 1), len, hornBase, ivory).rotateZ(pitch).rotateY(s * splay);
+            hn.translate(x, mouthY(x) + profile(sH[0], sH[1], x) * yk, z * s);
+            out.keratin.push(rig(toWorld(hn), headBone));
+          }
+        }
+      }
+      return out;
+    };
+    const main = makeHead((g) => g.applyMatrix4(tilt).translate(hp.x, hp.y, hp.z), B.head, B.jaw, hydra);
+    skinGeos.push(...main.skin);
+    keratin.push(...main.keratin);
+    dark.push(...main.dark);
+    eyes.push(...main.eyes);
+
+    // ---------------- the Jade Hydra: side necks and heads, wings, spines ----------------
+    if (hydra) {
+      const hd = { mottle, claw, hornBase, hornTip: ivory };
+      this._buildGhidorah({ makeHead: (toWorld) => makeHead(toWorld, -1, -1, true), tilt, backCol, midCol, bellyCol, hd });
+      keratin.push(...this._hydraSpines(hd));
     }
 
-    // ---------------- back crystals ----------------
-    const plates = this._buildCrystals(true);
+    // ---------------- back crystals (the Kaiju only) ----------------
+    const plates = hydra ? null : this._buildCrystals(true);
 
     const skinGeo = mergeGeometries(skinGeos.map(clean), false);
     const skinMesh = new THREE.SkinnedMesh(skinGeo, this.skinMat);
@@ -886,7 +908,8 @@ export class Dragon {
     };
     const eyeMesh = mk(mergeGeometries(eyes.map(clean), false), this.eyeMat);
     const darkMesh = mk(mergeGeometries(dark.map(clean), false), this.darkMat);
-    this.meshes = [skinMesh, mk(mergeGeometries(keratin.map(clean), false), this.ivoryMat), eyeMesh, darkMesh, mk(plates, this.plateMat)];
+    this.meshes = [skinMesh, mk(mergeGeometries(keratin.map(clean), false), this.ivoryMat), eyeMesh, darkMesh];
+    if (plates) this.meshes.push(mk(plates, this.plateMat));
     for (const m of this.meshes) {
       m.castShadow = m !== eyeMesh && m !== darkMesh;
       m.receiveShadow = true;
@@ -899,20 +922,27 @@ export class Dragon {
    * the Jade Hydra's extras: two side necks and heads that sway on their own, and a pair of wings, all rigid
    * meshes riding on the chest bone. All of it is decoration: the hitbox is the same body as everyone's.
    */
-  _buildGhidorah({ makeHead, tilt, backCol, midCol, bellyCol }) {
+  _buildGhidorah({ makeHead, tilt, backCol, midCol, bellyCol, hd = null }) {
     const chest = this.bones[B.chest];
     const chestRest = this.rest[B.chest];
-    // the side necks get the body's colouring: dark along the top, pale underneath
-    const neckColor = (a, out) => {
+    // the side necks get the body's colouring: dark along the top, pale underneath (Very High: banded
+    // throat scales and mottling too)
+    const neckColor = (t, a, out) => {
       const c = Math.cos(a);
-      return out.copy(backCol).lerp(midCol, smooth(0.95, 0.1, c) * 0.7).lerp(bellyCol, smooth(0.0, -0.75, c));
+      out.copy(backCol).lerp(midCol, smooth(0.95, 0.1, c) * 0.7).lerp(bellyCol, smooth(0.0, -0.75, c));
+      if (hd) {
+        out.multiplyScalar(1 - 0.4 * Math.max(0, c) ** 4);
+        out.multiplyScalar(1 - 0.35 * smooth(-0.3, -0.8, c) * (0.5 + 0.5 * Math.cos(t * 2 * Math.PI * 9)) ** 4);
+        hd.mottle(out, t * 3, c, Math.sin(a) + 3);
+      }
+      return out;
     };
     this.wingMat = new THREE.MeshStandardMaterial({
       vertexColors: true, side: THREE.DoubleSide, roughness: 0.6, metalness: 0.05, emissive: 0x03140e,
     });
     this.sideHeads = [];
     this.wings = [];
-    const wing = this._wingGeometry();
+    const wing = hd ? this._wingGeometryHD(hd) : this._wingGeometry();
     // The side heads are staggered so all three read from the side (2D): one low and forward,
     // the other raised high and back on a longer neck.
     const necks = {
@@ -924,24 +954,52 @@ export class Dragon {
       const pts = necks[side];
       const S = pts[0];
       const H = pts[3];
+      const neckR = (t) => 0.38 - 0.1 * t;
       const neck = sweep({
         points: pts,
-        segments: 30, radial: 24, uvScale: [1.6, 1.2], curveType: 'catmullrom',
-        section: (t, a, out) => { const r = 0.38 - 0.1 * t; out.x = Math.sin(a) * r * 0.92; out.y = Math.cos(a) * r; },
-        color: (t, a, out) => neckColor(a, out),
+        segments: hd ? 64 : 30, radial: hd ? 44 : 24, uvScale: hd ? [3.2, 2.6] : [1.6, 1.2], curveType: 'catmullrom',
+        section: (t, a, out) => {
+          const c = Math.cos(a), keel = hd ? Math.max(0, c) ** 30 * 0.03 : 0;
+          out.x = Math.sin(a) * neckR(t) * 0.92; out.y = c * neckR(t) + keel;
+        },
+        color: (t, a, out) => neckColor(t, a, out),
       });
       const yaw = -0.2 * side; // turned a little outward
       const toWorld = (g) => g.scale(0.86, 0.86, 0.86).applyMatrix4(tilt).rotateY(yaw).translate(H.x, H.y, H.z);
-      const head = makeHead(toWorld, -1, -1, true);
+      const head = makeHead(toWorld);
+      const keratin = [...head.keratin];
+      if (hd) {
+        // a row of spines down the top of the neck, raked back toward the body
+        const curve = new THREE.CatmullRomCurve3(pts);
+        const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3(), X = new THREE.Vector3(), up = V(0, 1, 0);
+        for (let i = 0; i < 6; i++) {
+          const t = 0.1 + 0.13 * i;
+          curve.getPointAt(t, P);
+          curve.getTangentAt(t, T);
+          N.copy(up).addScaledVector(T, -up.dot(T)).normalize();
+          X.crossVectors(T, N);
+          const len = 0.2 - 0.016 * i;
+          const g = spikeColors(curvedSpike(len, len * 0.3, -0.45, 10, 8, 0.6), len, hd.hornBase, hd.hornTip);
+          g.applyMatrix4(new THREE.Matrix4().makeBasis(T, N, X));
+          keratin.push(g.translate(P.x + N.x * neckR(t) * 0.92, P.y + N.y * neckR(t) * 0.92, P.z + N.z * neckR(t) * 0.92));
+        }
+      }
       const toPivot = (g) => g.translate(-S.x, -S.y, -S.z);
       const pivot = new THREE.Group();
       pivot.position.copy(S).sub(chestRest);
       const parts = [
-        new THREE.Mesh(mergeGeometries([neck, head.skull, head.jaw].map(clean).map(toPivot), false), this.skinMat),
-        new THREE.Mesh(mergeGeometries(head.teeth.map(clean).map(toPivot), false), this.ivoryMat),
-        new THREE.Mesh(mergeGeometries(head.eyes.map(clean).map(toPivot), false), this.eyeMat),
+        [[neck, ...head.skin], this.skinMat, true],
+        [keratin, this.ivoryMat, true],
+        [head.eyes, this.eyeMat, false],
+        [head.dark, this.darkMat, false],
       ];
-      parts.forEach((m, i) => { m.castShadow = i < 2; m.frustumCulled = false; pivot.add(m); });
+      for (const [geos, mat, shadow] of parts) {
+        if (!geos.length) continue;
+        const m = new THREE.Mesh(mergeGeometries(geos.map(clean).map(toPivot), false), mat);
+        m.castShadow = shadow;
+        m.frustumCulled = false;
+        pivot.add(m);
+      }
       // where this head's breath comes from
       const mouth = new THREE.Object3D();
       mouth.position.copy(V(1.1, -0.55, 0).multiplyScalar(0.86).applyMatrix4(tilt).applyAxisAngle(V(0, 1, 0), yaw).add(H).sub(S));
@@ -958,9 +1016,134 @@ export class Dragon {
       membrane.castShadow = bones.castShadow = true;
       membrane.frustumCulled = bones.frustumCulled = false;
       w.add(membrane, bones);
+      if (wing.claws) {
+        const claws = new THREE.Mesh(wing.claws, this.ivoryMat);
+        claws.castShadow = true;
+        claws.frustumCulled = false;
+        w.add(claws);
+      }
       chest.add(w);
       this.wings.push({ group: w, side });
     }
+  }
+
+  /** The Hydra's ridge of spines from the tail to the back of the neck, tips raked back. hd: { hornBase, hornTip }
+   * for more, ridged and coloured spines (Very High). */
+  _hydraSpines(hd = null) {
+    const tk = this.tk, out = [];
+    const P = new THREE.Vector3(), T = new THREE.Vector3(), N = new THREE.Vector3(), Z = V(0, 0, 1);
+    const a0 = tk[0] + 0.03, a1 = tk[8], n = hd ? 34 : 26;
+    for (let i = 0; i < n; i++) {
+      const k = i / (n - 1), t = a0 + (a1 - a0) * k;
+      this.curve.getPointAt(t, P);
+      this.curve.getTangentAt(t, T);
+      N.crossVectors(Z, T).normalize();
+      const len = (0.1 + 0.24 * Math.sin(Math.min(1, k * 1.15) * Math.PI) ** 0.8) * (hd && i % 2 ? 0.7 : 1);
+      const g = hd
+        ? spikeColors(curvedSpike(len, len * 0.3, -0.45, 10, 8, 0.6), len, hd.hornBase, hd.hornTip)
+        : curvedSpike(len, len * 0.32, -0.45, 6, 4);
+      g.rotateZ(Math.atan2(T.y, T.x));
+      g.translate(P.x + N.x * profile(tk, RY, t) * 0.9, P.y + N.y * profile(tk, RY, t) * 0.9, P.z);
+      const sk = this.spineSkin(t), m = g.attributes.position.count;
+      const si = new Uint16Array(m * 4), sw = new Float32Array(m * 4);
+      for (let j = 0; j < m; j++) { si[j * 4] = sk[0]; si[j * 4 + 1] = sk[1]; sw[j * 4] = sk[2]; sw[j * 4 + 1] = sk[3]; }
+      g.setAttribute('skinIndex', new THREE.BufferAttribute(si, 4));
+      g.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
+      out.push(g);
+    }
+    return out;
+  }
+
+  /**
+   * The Very High wing: the standard wing's outline, finely tessellated. The membrane billows between the
+   * finger bones (zero on the bones and where it joins the body, most mid-panel), is paler where it is
+   * thin and carries dark veins fanning from the wrist; thicker bones with a wrist knuckle, a thumb claw
+   * and a claw at the tip. hd: { claw, mottle }.
+   */
+  _wingGeometryHD({ claw, mottle }) {
+    const R = V(0, 0, 0), W = V(0.4, 1.0, 0.9), tip = V(-0.1, 2.3, 2.1);
+    const F = [V(-1.1, 1.8, 2.4), V(-1.9, 1.0, 2.0), V(-1.7, 0.25, 1.2), V(-0.9, -0.2, 0.45)];
+    const scallop = (a, b, toward) => a.clone().lerp(b, 0.5).lerp(toward, 0.22);
+    const M01 = scallop(F[0], F[1], W), M12 = scallop(F[1], F[2], W), M23 = scallop(F[2], F[3], R);
+    const tris = [
+      [W, tip, F[0]], [W, F[0], M01], [W, M01, F[1]], [W, F[1], M12], [W, M12, F[2]],
+      [R, W, F[2]], [R, F[2], M23], [R, M23, F[3]],
+    ];
+    // the membrane hangs from these (and from the body along R-F3)
+    const segs = [[R, W], [W, tip], [W, F[0]], [W, F[1]], [W, F[2]], [R, F[3]]];
+    const sAB = new THREE.Vector3(), sAP = new THREE.Vector3(), sQ = new THREE.Vector3();
+    const distToBone = (p) => {
+      let best = Infinity;
+      for (const [a, b] of segs) {
+        sAB.subVectors(b, a);
+        const t = Math.min(1, Math.max(0, sAP.subVectors(p, a).dot(sAB) / sAB.lengthSq()));
+        best = Math.min(best, p.distanceTo(sQ.copy(a).addScaledVector(sAB, t)));
+      }
+      return best;
+    };
+    // one normal for the whole wing (the billow direction), every triangle wound to agree with it
+    const nrm = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), tn = new THREE.Vector3();
+    const first = new THREE.Vector3().crossVectors(e1.subVectors(tris[0][1], tris[0][0]), e2.subVectors(tris[0][2], tris[0][0]));
+    for (const tri of tris) {
+      tn.crossVectors(e1.subVectors(tri[1], tri[0]), e2.subVectors(tri[2], tri[0]));
+      if (tn.dot(first) < 0) { [tri[1], tri[2]] = [tri[2], tri[1]]; tn.negate(); }
+      nrm.add(tn);
+    }
+    nrm.normalize();
+    const ax = tip.clone().sub(W).normalize(), ay = new THREE.Vector3().crossVectors(nrm, ax).normalize();
+    const inner = new THREE.Color(0x4f9a78), outer = new THREE.Color(0x10302a), veinCol = new THREE.Color(0x0b211b);
+    const pos = [], col = [];
+    const P = new THREE.Vector3(), D = new THREE.Vector3(), c = new THREE.Color();
+    const N = 10;
+    const vertex = (a, b, cc, i, j) => {
+      P.copy(a).addScaledVector(e1.subVectors(b, a), i / N).addScaledVector(e2.subVectors(cc, a), j / N);
+      const d = distToBone(P), rw = P.distanceTo(W);
+      c.copy(inner).lerp(outer, Math.min(1, rw / 2.4));
+      c.multiplyScalar(1 + 0.25 * smooth(0.05, 0.6, d)); // thinner (paler) away from the bones
+      D.subVectors(P, W);
+      const ang = Math.atan2(D.dot(ay), D.dot(ax));
+      const vein = Math.abs(Math.cos(ang * 11 + rw * 0.8)) ** 12 * smooth(0.2, 0.6, rw) * smooth(0.03, 0.15, d);
+      c.lerp(veinCol, 0.7 * vein);
+      c.multiplyScalar(1 - 0.35 * smooth(1.6, 2.6, rw)); // a darker trailing edge
+      mottle(c, P.x * 2, P.y * 2, P.z * 2, 0.5);
+      P.addScaledVector(nrm, 0.26 * smooth(0, 0.9, d));
+      pos.push(P.x, P.y, P.z);
+      col.push(c.r, c.g, c.b);
+    };
+    for (const [a, b, cc] of tris) {
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N - i; j++) {
+          vertex(a, b, cc, i, j); vertex(a, b, cc, i + 1, j); vertex(a, b, cc, i, j + 1);
+          if (i + j < N - 1) { vertex(a, b, cc, i + 1, j); vertex(a, b, cc, i + 1, j + 1); vertex(a, b, cc, i, j + 1); }
+        }
+      }
+    }
+    let membrane = new THREE.BufferGeometry();
+    membrane.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    membrane.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    membrane = mergeVertices(membrane, 1e-4);
+    membrane.computeVertexNormals();
+    // bones: tapering, a knuckle where each leaves the wrist, a bulge mid-length
+    const boneCol = new THREE.Color(0x1f4535);
+    const bone = (a, b, r, knob) => sweep({
+      points: [a, a.clone().lerp(b, 0.5).addScaledVector(nrm, 0.04), b], segments: 18, radial: 14, uvScale: [0.8, 0.5], curveType: 'catmullrom',
+      section: (t, ang, out) => {
+        const rr = r * (1 - 0.55 * t) * (1 + knob * bump(t, 0.04, 0.08) + 0.12 * bump(t, 0.5, 0.1));
+        out.x = Math.sin(ang) * rr; out.y = Math.cos(ang) * rr;
+      },
+      color: (t, ang, out) => mottle(out.copy(boneCol), t * 4, Math.cos(ang), Math.sin(ang), 0.6),
+      capStart: true, capEnd: true,
+    });
+    const wrist = new THREE.SphereGeometry(0.11, 16, 12).translate(W.x, W.y, W.z);
+    const wc = new Float32Array(wrist.attributes.position.count * 3);
+    for (let i = 0; i < wc.length; i += 3) { wc[i] = boneCol.r; wc[i + 1] = boneCol.g; wc[i + 2] = boneCol.b; }
+    wrist.setAttribute('color', new THREE.BufferAttribute(wc, 3));
+    const bones = mergeGeometries([bone(R, W, 0.1, 0.2), bone(W, tip, 0.07, 0.3), ...F.slice(0, 3).map((f) => bone(W, f, 0.05, 0.3)), wrist].map(clean), false);
+    const claws = mergeGeometries([
+      claw(0.26, 0.05, 0.5, V(0.6, 0.75, 0.2), W.clone().add(V(0.05, 0.08, 0))),
+      claw(0.16, 0.035, 0.4, tip.clone().sub(W), tip),
+    ].map(clean), false);
+    return { membrane, bones, claws };
   }
 
   /** A bat wing: a scalloped membrane between finger bones, reaching up, out (+z) and back. */
