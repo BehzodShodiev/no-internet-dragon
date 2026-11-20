@@ -27,7 +27,7 @@ const smooth = (a, b, x) => {
 const damp = (cur, target, rate, dt) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 const lerp = (a, b, t) => a + (b - a) * t;
 /** Smooth interpolation through (keys, vals). */
-function curve(keys, vals, t) {
+export function curve(keys, vals, t) {
   if (t <= keys[0]) return vals[0];
   for (let i = 0; i < keys.length - 1; i++) {
     if (t <= keys[i + 1]) {
@@ -68,7 +68,7 @@ const HIND = {
 };
 /** Extra length of the hind wing's tail at v (0 off the tail). */
 const tailAt = (w, v) => (w.tail ? w.tail.len * Math.exp(-(((v - w.tail.at) / w.tail.w) ** 2)) : 0);
-function wingPoint(w, u, v, out) {
+export function wingPoint(w, u, v, out) {
   const R = curve(w.rk, w.rv, v) * (1 - w.scallop * Math.abs(Math.sin(v * Math.PI * 5))) + tailAt(w, v);
   const th = lerp(w.th[0], w.th[1], v);
   out.x = lerp(w.root[0], w.root[1], v) + u * R * Math.sin(th);
@@ -77,7 +77,7 @@ function wingPoint(w, u, v, out) {
   return out;
 }
 
-function dataTexture(data, w, h, srgb) {
+export function dataTexture(data, w, h, srgb) {
   const t = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.magFilter = THREE.LinearFilter;
@@ -90,7 +90,7 @@ function dataTexture(data, w, h, srgb) {
 }
 
 /** Fine fur running along the body (u): streaky height noise, as colour variation and a normal map. */
-function makeFur(size = 256) {
+export function makeFur(size = 256) {
   const k = size / 256; // the same pattern at any resolution
   const tn = createTileableNoise(77);
   const hgt = new Float32Array(size * size);
@@ -179,7 +179,7 @@ function makeWingTextures(w, hind, W = 256, H = 256) {
 }
 
 /** A fan-shaped wing mesh (uv = (u, v) of the fan, so the painted pattern lines up). */
-function wingGeometry(w, nu = 12, nv = 30) {
+export function wingGeometry(w, nu = 12, nv = 30) {
   const pos = [], uv = [], idx = [];
   const P = V(0, 0, 0);
   for (let j = 0; j <= nv; j++) {
@@ -204,7 +204,7 @@ function wingGeometry(w, nu = 12, nv = 30) {
   return g;
 }
 
-function clean(g) {
+export function clean(g) {
   const keep = ['position', 'normal', 'uv', 'color'];
   const q = g.index ? g.toNonIndexed() : g;
   for (const k of Object.keys(q.attributes)) if (!keep.includes(k)) q.deleteAttribute(k);
@@ -212,7 +212,7 @@ function clean(g) {
   if (!q.attributes.color) q.setAttribute('color', new THREE.BufferAttribute(new Float32Array(q.attributes.position.count * 3).fill(1), 3));
   return q;
 }
-function paint(g, hex) {
+export function paint(g, hex) {
   const c = new THREE.Color(hex);
   const n = g.attributes.position.count;
   const a = new Float32Array(n * 3);
@@ -252,6 +252,7 @@ export class Moth {
     this.hitX = 1;
     this.onFootstep = null; // she has no footfalls
     this.onWingbeat = null; // (strength 0..1) at the start of every downstroke
+    this.legSpread = 1; // how far out the skimming legs plant (Storm Wing walks with his feet closer in)
     this._buildMaterials();
     this._buildMeshes();
     this._tmp = V(0, 0, 0);
@@ -263,6 +264,7 @@ export class Moth {
     this._k = V(0, 0, 0);
     this._h = V(0, 0, 0);
     this._one = V(1, 1, 1);
+    this._zero = V(0, 0, 0);
     this._Y = V(0, 1, 0);
     this.update(0, { speed: 0, grounded: true, vy: 0 });
   }
@@ -312,21 +314,63 @@ export class Moth {
     this.wingMats = [this.foreMat, this.hindMat];
   }
 
+  /** body (thorax, abdomen, head, wings), legs, then the hitbox anchors. Storm Wing overrides the parts. */
   _buildMeshes() {
+    this.body = new THREE.Group();
+    this.root.add(this.body);
+    this._buildBody();
+    const legs = this._legGeometry();
+    this.femurs = new THREE.InstancedMesh(legs.femur, this.furMat, 6);
+    this.tibias = new THREE.InstancedMesh(legs.tibia, this.furMat, 6);
+    for (const m of [this.femurs, this.tibias]) {
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      m.frustumCulled = false;
+      this.body.add(m);
+    }
+    this.legs = [];
+    for (let pair = 0; pair < 3; pair++) {
+      for (const side of [1, -1]) {
+        const r = LEG_ROOTS[pair];
+        const gl = GROUND_LEGS.find((l) => l.pair === pair && l.side === side);
+        const tip = new THREE.Object3D();
+        this.body.add(tip);
+        this.legs.push({ pair, side, hip: V(r.x, r.y, r.z * side), ground: gl || null, tip, target: V(0, 0, 0) });
+      }
+    }
+    this._buildAnchors();
+  }
+
+  /** The hitbox anchors (placed to match the Kaiju's boxes) and the mouth. */
+  _buildAnchors(snout = [0.664, -0.18]) {
+    const mk = (parent, x, y) => { const o = new THREE.Object3D(); o.position.set(x, y, 0); parent.add(o); return o; };
+    this.anchor = {
+      head: mk(this.head, 0.567, 0.188),
+      // where the beam leaves (the Moth Queen: just below the face, between the palps)
+      snout: mk(this.head, snout[0], snout[1]),
+      neck: mk(this.body, 0.273, 0.12),
+      chest: mk(this.body, -0.208, 0.071),
+      hips: mk(this.body, -1.102, 0.287),
+    };
+  }
+
+  _add(parent, geo, mat, shadow = true) {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = shadow;
+    m.receiveShadow = true;
+    m.frustumCulled = false;
+    parent.add(m);
+    return m;
+  }
+
+  _buildBody() {
     // white and lilac fur: a white thorax and collar, a cream abdomen banded in lilac
     const hd = this.detail === 'hd';
     const brown = new THREE.Color(0xd8d2e2), brownLo = new THREE.Color(0xb8a8cc), ochre = new THREE.Color(0xf2ecdc);
     const dark = new THREE.Color(0x9c84b4), cream = new THREE.Color(0xffffff);
-    const add = (parent, geo, mat, shadow = true) => {
-      const m = new THREE.Mesh(geo, mat);
-      m.castShadow = shadow;
-      m.receiveShadow = true;
-      m.frustumCulled = false;
-      parent.add(m);
-      return m;
-    };
-    const body = (this.body = new THREE.Group());
-    this.root.add(body);
+    const add = (parent, geo, mat, shadow = true) => this._add(parent, geo, mat, shadow);
+    const body = this.body;
 
     // ---- thorax with a fluffy collar ----
     const thorax = sweep({
@@ -439,7 +483,11 @@ export class Moth {
       }
     }
 
-    // ---- legs: femur and tibia per leg, instanced, placed by 2-bone IK every frame ----
+  }
+
+  /** Femur and tibia geometry (instanced per leg, placed by 2-bone IK every frame). */
+  _legGeometry() {
+    const hd = this.detail === 'hd';
     // lilac-pink legs (Very High: a furred femur, a jointed tibia with a row of spines, and a tarsus)
     const legA = 0xb88cb8, legB = 0xa07aa8;
     const femurParts = [
@@ -457,37 +505,9 @@ export class Moth {
       new THREE.CylinderGeometry(0.035, 0.07, L2 - 0.1, 10).translate(0, (L2 - 0.1) / 2, 0),
       new THREE.ConeGeometry(0.04, 0.16, 6).rotateZ(-0.35).translate(0.02, L2 - 0.05, 0),
     ];
-    const femur = mergeGeometries(femurParts.map((g) => paint(clean(g), legA)), false);
-    const tibia = mergeGeometries(tibiaParts.map((g) => paint(clean(g), legB)), false);
-    this.femurs = new THREE.InstancedMesh(femur, this.furMat, 6);
-    this.tibias = new THREE.InstancedMesh(tibia, this.furMat, 6);
-    for (const m of [this.femurs, this.tibias]) {
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      m.frustumCulled = false;
-      body.add(m);
-    }
-    this.legs = [];
-    for (let pair = 0; pair < 3; pair++) {
-      for (const side of [1, -1]) {
-        const r = LEG_ROOTS[pair];
-        const gl = GROUND_LEGS.find((l) => l.pair === pair && l.side === side);
-        const tip = new THREE.Object3D();
-        body.add(tip);
-        this.legs.push({ pair, side, hip: V(r.x, r.y, r.z * side), ground: gl || null, tip, target: V(0, 0, 0) });
-      }
-    }
-
-    // ---- anchors: hitbox centres (placed to match the Kaiju's boxes), mouth ----
-    const mk = (parent, x, y) => { const o = new THREE.Object3D(); o.position.set(x, y, 0); parent.add(o); return o; };
-    this.anchor = {
-      head: mk(this.head, 0.567, 0.188),
-      // the beam leaves just below the face, between the palps
-      snout: mk(this.head, 0.664, -0.18),
-      neck: mk(body, 0.273, 0.12),
-      chest: mk(body, -0.208, 0.071),
-      hips: mk(body, -1.102, 0.287),
+    return {
+      femur: mergeGeometries(femurParts.map((g) => paint(clean(g), legA)), false),
+      tibia: mergeGeometries(tibiaParts.map((g) => paint(clean(g), legB)), false),
     };
   }
 
@@ -597,7 +617,7 @@ export class Moth {
           gx = gl.x - stride + 2 * stride * u * u * (3 - 2 * u);
           gy = 0.16 * Math.sin(Math.PI * u) * run;
         }
-        T.set(gx + 0.05 * duck, gy, (gl.z + 0.12 * duck) * s).applyMatrix4(this._inv);
+        T.set(gx + 0.05 * duck, gy, (gl.z * this.legSpread + 0.12 * duck) * s).applyMatrix4(this._inv);
         // in the air the legs trail back under the abdomen
         this._a.set(gl.pair === 1 ? -0.95 : -1.15, gl.pair === 1 ? -1.04 : -0.92, (gl.pair === 1 ? 0.42 : 0.45) * s);
         T.lerp(this._a, air);
@@ -632,10 +652,11 @@ export class Moth {
       const K = this._k.copy(H).addScaledVector(d, a).addScaledVector(hint, h);
       this._b.subVectors(K, H).normalize();
       this._q.setFromUnitVectors(this._Y, this._b);
-      this.femurs.setMatrixAt(i, this._m.compose(H, this._q, this._one));
+      const sc = this.hiddenPairs?.includes(leg.pair) ? this._zero : this._one; // Storm Wing shows only one pair
+      this.femurs.setMatrixAt(i, this._m.compose(H, this._q, sc));
       this._b.subVectors(T, K).normalize();
       this._q.setFromUnitVectors(this._Y, this._b);
-      this.tibias.setMatrixAt(i, this._m.compose(K, this._q, this._one));
+      this.tibias.setMatrixAt(i, this._m.compose(K, this._q, sc));
     });
     this.femurs.instanceMatrix.needsUpdate = true;
     this.tibias.instanceMatrix.needsUpdate = true;

@@ -1,6 +1,6 @@
 // The fairness gate: runs the autopilot (tools/bot.js) on every level x view x monster x seed in fast
 // fixed-step simulation (?sim=N) until each run reaches a loop count, and fails (exit 1) on any death.
-//   node tools/botmatrix.mjs [--levels 1,2,3] [--views 2d,3d] [--monsters kaiju,ghidorah,mothra]
+//   node tools/botmatrix.mjs [--levels 1,2,3] [--views 2d,3d] [--monsters kaiju,ghidorah,mothra,stormwing,rex]
 //        [--seeds 101,202] [--loops 4] [--sim 10] [--workers 3] [--max 1500] [--url URL] [--quick]
 // --max: game seconds per run before giving up on reaching the loop count (counted as a pass, flagged).
 // --quick: one seed, 2 loops. A JSON report is written to the OS temp folder.
@@ -16,7 +16,7 @@ const list = (v, d) => (v ? String(v).split(',').map((x) => x.trim()).filter(Boo
 const quick = !!A.quick;
 const levels = list(A.levels, ['1', '2', '3']).map(Number);
 const views = list(A.views, ['2d', '3d']);
-const monsters = list(A.monsters, ['kaiju', 'ghidorah', 'mothra', 'rex']);
+const monsters = list(A.monsters, ['kaiju', 'ghidorah', 'mothra', 'stormwing', 'rex']);
 const seeds = list(A.seeds, quick ? ['101'] : ['101', '202']).map(Number);
 const loops = Number(A.loops || (quick ? 2 : 4));
 const sim = Number(A.sim || 10);

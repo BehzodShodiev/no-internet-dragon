@@ -315,6 +315,7 @@ export class HUD {
       kaiju: 'linear-gradient(135deg, #2e3530 40%, #2dffb0)',
       ghidorah: 'linear-gradient(135deg, #10302a, #2a6650 55%, #b3c294)',
       rex: 'linear-gradient(135deg, #2c3618, #5c6b2e 50%, #c4925a)',
+      stormwing: 'linear-gradient(160deg, #1a2230, #2b394b 45%, #7fe8ff 47%, #2b394b 50%, #5a6e86)',
       mothra: 'radial-gradient(circle at 76% 26%, #faf8ec 0 9%, transparent 10%), radial-gradient(circle at 80% 23%, #8ac0a0 0 8%, transparent 9%), linear-gradient(135deg, #704078, #80c096 45%, #d6ecc0)',
     };
     const lock = '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2z"/></svg>';

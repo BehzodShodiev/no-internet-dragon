@@ -97,7 +97,19 @@ Everyone starts with the **Kaiju** (a giant lizard with crystals growing from it
 | Kaiju | from the start | crystal clusters along its back that twinkle as the breath charges; its **Prism Beam** is a twisting six-sided crystal beam that throws off shards. Twelve free skins, six in the shop |
 | **Jade Hydra** | down 5 gunships in total | three horned heads (staggered so all three read in 2D), jade hide and wings, a ridge of spines, **Triple Fire** (green fire from every mouth); wide build: hitbox 115%, score Г—1.15 |
 | **Moth Queen** | collect 500 crystals in total | a giant moon moth (pale jade wings with violet crescent marks, long lilac tails on the hind wings, a white-and-lilac furry body) that skims the ground on her legs while her wings beat. Keep holding jump after the top of a jump to glide (a slower fall), let go to drop. Glowing crescents, a silver wing-dust beam with glittering scales, a high cry. Hitbox 100%; gliding is an edge, so score Г—0.9 |
+| **Storm Wing** | down your first gunship | a giant storm pterosaur: slate-blue hide, a long beak and a swept crest with a glowing edge, a tail vane, two bird legs and one pair of membrane wings whose veins glow like lightning (`StormWing.js`, built on the Moth Queen's flying body, so the same hitboxes). Breath: the crackling **Thunder Beam**. Hitbox 100%, score ×1.0 |
 | **Rex** | from the start (new players begin with it) | a tyrant lizard with a huge head, tiny arms and no plates. Two skins: **Pixel** (the default: the model rebuilt from cubes by `Voxel.js`) and **Classic** (smooth, olive with tiger stripes). Its attack is the **Tooth Quake**: instead of a beam, a wave of giant teeth erupts from the ground ahead of it (cube teeth for Pixel, sculpted fangs for Classic, `world/Teeth.js`) and skewers what is in the way. It hits exactly what the beam would, so scores compare fairly. Both skins share the Kaiju's skeleton and play identically |
+
+**Signature abilities** (`src/game/Traits.js`, on the buttons you already use; all optional, and the hitbox heights never change):
+
+| Monster | Ability | How |
+| --- | --- | --- |
+| Kaiju | **Crystal Burst** | hold duck and press breath with the meter at least half full (a full meter always fires the beam): everything close by shatters, rocks and shells included; costs half a charge |
+| Jade Hydra | **Wing Flap** | press jump again in mid-air for a second jump (high enough for fuel tanks and pillars, and for high flyers, so mind them); his Triple Fire takes 2 hit points off a gunship. His score factor is ×1.0 since v33 (was ×1.15: the flap makes up for the wide build) |
+| Moth Queen | **Scale Storm** | her wing-dust beam lasts 1.6 s and sweeps up every crystal it touches (on top of the glide) |
+| Storm Wing | **Sonic Dive** | in mid-air hold duck to plunge (gravity ×4.2); the boom on landing shatters smashable things just ahead (not tall ones) |
+
+The autopilot never uses the active ones (it jumps only from the ground and breathes only at a full meter), so the bot matrix still checks the plain game. A one-time tip teaches each.
 
 Every monster has the Kaiju's hitbox heights (running, ducking and in the air), so size never makes anything easier or harder to clear; only the width varies. More are planned; see `docs/ROADMAP.md`.
 

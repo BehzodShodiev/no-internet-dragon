@@ -217,6 +217,7 @@ export const PTERO_HEIGHTS = [0.95, 1.95, 3.2];
 // Stages where some helicopters are gunners, and the loop they start from (all from the first).
 const GUNNER_STAGES = { army: 0, siege: 0, inferno: 0 };
 const SHELL_SPEED = 16; // on top of the ground speed
+const SHELL_CLEAR = 0.9; // seconds between the last thing on the track passing and a shooter's shell arriving
 // Crystal Rush (after a gunship falls): a river of crystals and nothing to dodge
 const RUSH_STEP = 3.5; // units between crystals (sparse: every crystal also feeds the combo chain)
 const RUSH_TAIL = 1.2; // the river ends this many seconds' run before the rush does: a clear run-in to the next obstacle
@@ -942,11 +943,14 @@ export class Obstacles {
         ? Math.min(0.8, 0.45 + 0.1 * (this.cycle + this.levelTight))
         : Math.min(0.5, 0.25 + 0.08 * (this.cycle + this.levelTight)));
       // A shooter needs the track between it and the dragon clear by the time it fires, so the
-      // shell is the only thing to react to. Hold the spawn back until there is that much room.
+      // shell is the only thing to react to. Hold the spawn back until there is that much room, and
+      // until everything already coming has passed the monster SHELL_CLEAR seconds before the shell
+      // arrives: the shell is faster than anything else, so at high speed it could catch up with a
+      // fast flyer and arrive with it (a jump and a duck at once).
       const need = 2.4 * speed + 4;
-      if (shooter && !this.pendingShooter && freeSpace < need && this.firstSpawnX == null) {
+      if (shooter && this.firstSpawnX == null && (freeSpace < need || !this._shellClear(speed, type === 'heli' ? 1.3 : 2.2))) {
         this.pendingShooter = type;
-        this.nextGap = need;
+        this.nextGap = need; // with room already there, this re-checks every frame until it fits
         return;
       }
       this.pendingShooter = false;
@@ -1054,6 +1058,22 @@ export class Obstacles {
       const c = (start + end) / 2; // high trio: worth an extra jump in the gap, if there's time
       for (let k = -1; k <= 1; k++) cr.add(c + k * 0.09 * speed, arcY(k * 0.09 * speed), 0, true);
     }
+  }
+
+  /**
+   * Whether a shooter spawning now would fire a shell that reaches the monster at least SHELL_CLEAR s
+   * after everything already on the track has passed it. muzzle: how far ahead of the shooter it fires.
+   */
+  _shellClear(speed, muzzle) {
+    const v = Math.max(1, speed);
+    const x0 = SPAWN_X + 1.4, fireX = 2.4 * v;
+    const tHit = Math.max(0, (x0 - fireX) / v) + Math.max(0, fireX - muzzle - 2) / (v + SHELL_SPEED);
+    for (const o of this.active) {
+      if (o.projectile || o.dead) continue;
+      const tPass = (o.x + o.width / 2 + 1) / Math.max(1, v + o.vx);
+      if (tPass > tHit - SHELL_CLEAR) return false;
+    }
+    return true;
   }
 
   /** A gunner helicopter: noses down to aim (with the warning), then fires its shell from the nose. */

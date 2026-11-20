@@ -10,11 +10,12 @@ const s = await Session.launch({ w: 640, h: 360 });
 await s.navigate(url);
 if (!(await s.waitState('title', 120000))) { console.log('no title'); process.exit(1); }
 const results = [];
-for (const variant of ['kaiju', 'ghidorah', 'mothra']) {
+for (const variant of ['kaiju', 'ghidorah', 'mothra', 'stormwing']) {
 const r = await s.evaluate(`(async () => {
   const g = window.__game;
-  const make = (detail) => { if ('${variant}' !== 'mothra') return new g.dragon.constructor(g.tex.scales, '${variant}', detail);
-    g.selectMonster('mothra', true); const M = g.dragons.mothra.constructor; return new M(detail); };
+  const flyer = '${variant}' === 'mothra' || '${variant}' === 'stormwing';
+  const make = (detail) => { if (!flyer) return new g.dragon.constructor(g.tex.scales, '${variant}', detail);
+    g.selectMonster('${variant}', true); const M = g.dragons['${variant}'].constructor; return new M(detail); };
   const a = make('std'), b = make('hd');
   if (b.detail !== 'hd') return 'no detailed model';
   const boxes = () => Array.from({ length: 8 }, () => new Float32Array(4));

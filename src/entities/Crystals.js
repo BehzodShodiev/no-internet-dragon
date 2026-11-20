@@ -38,6 +38,17 @@ export class Crystals {
     for (const c of this.items) if (c.owner === owner) c.mag = 1;
   }
 
+  /** Collects every crystal with x0 <= x <= x1 (the Moth Queen's SCALE STORM beam). */
+  collect(x0, x1, onPick) {
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const c = this.items[i];
+      if (c.x >= x0 && c.x <= x1 && c.y < 5) {
+        this.items.splice(i, 1);
+        onPick(c);
+      }
+    }
+  }
+
   clear() {
     this.items.length = 0;
     this.mesh.count = 0;

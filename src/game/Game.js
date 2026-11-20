@@ -9,7 +9,9 @@ import { Leaderboard } from './Leaderboard.js';
 import { Stages, LEVELS } from './Stages.js';
 import { Dragon, DRAGON_SCALE, HD_VARIANTS } from '../entities/Dragon.js';
 import { Moth } from '../entities/Moth.js';
-import { Obstacles, SMASH, SILENT } from '../entities/Obstacles.js';
+import { StormWing } from '../entities/StormWing.js';
+import { Obstacles, SMASH, SILENT, TALL } from '../entities/Obstacles.js';
+import { TRAITS, BREATH_TIME, DIVE_FALL, DIVE_WINDOW } from './Traits.js';
 import { Crystals } from '../entities/Crystals.js';
 import { Boss } from '../entities/Boss.js';
 import { SKINS } from '../entities/Skins.js';
@@ -200,6 +202,10 @@ export class Game {
   /** Per-run state shared by the first start and every restart. */
   _resetRun() {
     this.seed = (this.seedBase + this.runCount++) >>> 0;
+    this.airJumps = 1; // the Hydra's WING FLAP
+    this.diveT = 0; // Storm Wing's SONIC DIVE window
+    this.breathDur = CFG.breathTime;
+    this.burstT = 0;
     // the Desert's sandstorm comes once a run, at a seeded time (its own stream: spawns are untouched)
     this.stormAt = 50 + 30 * mulberry32(hash32(this.seed, 4000))();
     this.stormLeft = 0;
@@ -396,7 +402,7 @@ export class Game {
 
   /** Builds a monster's model (hidden) and keeps it for later picks. */
   _buildMonster(m) {
-    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth(this.modelDetail || 'std') : new Dragon(this.tex.scales, m.variant, this.modelDetail || 'std'));
+    const d = (this.dragons[m.id] = m.model === 'moth' ? new Moth(this.modelDetail || 'std') : m.model === 'stormwing' ? new StormWing(this.modelDetail || 'std') : new Dragon(this.tex.scales, m.variant, this.modelDetail || 'std'));
     d.onFootstep = (leg, fx) => this._footstep(leg, fx);
     d.onWingbeat = (k) => this._wingbeat(k);
     d.group.visible = false;
@@ -541,6 +547,13 @@ export class Game {
     this.teeth = new Teeth(scene); // the Rex's Tooth Quake
     this.shards = new Shards(200); // thrown off by the Kaiju's prism beam
     scene.add(this.shards.mesh);
+    // the Kaiju's CRYSTAL BURST: a ring of light racing out over the ground
+    this.burstRing = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 56).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    }));
+    this.burstRing.visible = false;
+    this.burstRing.renderOrder = 3;
+    scene.add(this.burstRing);
     this.contact = new ContactShadows(scene, tex.dot);
     this.footprints = new Footprints(tex.footprint);
     scene.add(this.footprints.mesh);
@@ -641,6 +654,7 @@ export class Game {
     this.dust.emit(4, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1);
     this.sparks.emit(4, 1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1);
     this.shards.emit(4, 1, 0, 0, 0, 0, 1, 1);
+    this.burstRing.visible = true;
     this.dust.update(0, 0);
     this.sparks.update(0, 0);
     this.shards.update(0, 0);
@@ -688,6 +702,7 @@ export class Game {
     this.dust.clear();
     this.sparks.clear();
     this.shards.clear();
+    this.burstRing.visible = false;
     this.footprints.clear();
   }
 
@@ -788,6 +803,7 @@ export class Game {
     if (this.state === 'paused') return this.togglePause(false);
     if (this.state === 'running' || this.state === 'intro') {
       if (this.grounded) this._doJump();
+      else if (this.monster.trait === 'flap' && this.airJumps > 0 && this.y > 0.6 && this.state === 'running') this._flap();
       else this.jumpBuf = CFG.jumpBuffer; // pressed a moment early: jump on landing
     }
   }
@@ -799,6 +815,48 @@ export class Game {
     this.cutPending = !this.input.jump;
     this.audio.jump();
     this._dustBurst(0.4, 10, 1.2);
+  }
+
+  /** WING FLAP (the Hydra): a second jump in mid-air, once per jump. */
+  _flap() {
+    this.airJumps--;
+    this.jumpBuf = 0;
+    this.vy = Math.max(this.vy, 0.75 * CFG.jumpV);
+    this.cutPending = !this.input.jump;
+    this.audio.flutter(1);
+    this._dustBurst(0.3, 8, 2.2);
+  }
+
+  /** CRYSTAL BURST (the Kaiju): half a charge shatters everything close by, rocks and shells included. */
+  _crystalBurst() {
+    this.charge -= 0.5;
+    let n = 0;
+    this.obstacles.inZone(-3, 0, 6, 4.5, (o) => {
+      o.dead = true;
+      this._explode(o, 15);
+      n++;
+    });
+    if (n) this._setChain(this.chain + n);
+    const [r, g, b] = this.skin.beam[0], m = Math.max(r, g, b);
+    this.burstRing.material.color.setRGB((r / m) * 2.2, (g / m) * 2.2, (b / m) * 2.2);
+    this.burstT = 0.0001;
+    this._blast(1.5, 1.2, 1.2);
+    this.audio.cannon();
+    this._roar(1.2, 1.1);
+    this.rig.shake(0.5);
+    this._popup(n ? `CRYSTAL BURST ×${n}` : 'CRYSTAL BURST', 2, 3.2, 'close');
+  }
+
+  /** SONIC DIVE (Storm Wing): the boom on landing shatters smashable things just ahead (not tall ones). */
+  _sonicBoom() {
+    this.obstacles.inZone(-1, 0, 4.5, 2.5, (o) => {
+      if (TALL[o.type] || typeof o.smash !== 'number' || o.smash <= 0) return;
+      this._smashHit(o);
+    });
+    this.rig.shake(0.45);
+    this.audio.land();
+    this._dustBurst(1.4, 26, 3.2);
+    this._blast(1.2, 0.3, 0.7, 0.6);
   }
 
   _startIntro() {
@@ -817,9 +875,11 @@ export class Game {
 
   /** One-time hint for a monster that plays differently. */
   _monsterTip() {
-    if (!this.monster.glide) return;
     const touch = matchMedia('(pointer: coarse)').matches;
     const who = this.monster.name;
+    const tr = TRAITS[this.monster.trait];
+    if (tr) this._tip(`trait-${this.monster.trait}`, `${who} · ${tr.name}: ${touch ? tr.touch : tr.key}`);
+    if (!this.monster.glide) return;
     this._tip('glide', touch ? `${who}: keep your finger down after a jump to glide. Let go to drop.` : `${who}: keep holding jump after the top of a jump to glide. Let go to drop.`);
   }
 
@@ -1107,6 +1167,8 @@ export class Game {
   // ------------------------------------------------------------------ gameplay helpers
   _breath() {
     if (this.state !== 'running' || this.breathT > 0) return;
+    // the Kaiju's CRYSTAL BURST: duck + breath with the meter half full (a full meter always fires the beam)
+    if (this.monster.trait === 'burst' && this.input.duck && this.charge >= 0.5 && this.charge < 1) { this._crystalBurst(); return; }
     this.breathKills = 0;
     if (this.charge < 1) {
       // tell the player why nothing happened instead of silently ignoring the key
@@ -1116,9 +1178,10 @@ export class Game {
       return;
     }
     this.charge = 0;
-    this.breathT = CFG.breathTime;
+    this.breathDur = BREATH_TIME[this.monster.trait] || CFG.breathTime;
+    this.breathT = this.breathDur;
     this.bossHitThisBreath = false;
-    this.audio.breath(CFG.breathTime, this.monster.sound?.breath);
+    this.audio.breath(this.breathDur, this.monster.sound?.breath);
     this._roar(1.1, 0.85);
     this.rig.shake(0.5);
     this.flash = 0.1;
@@ -1655,11 +1718,11 @@ export class Game {
     else if (boss.state !== 'dying') this.hud.setBoss('', -1, 0);
   }
 
-  /** source: 'breath' or 'reflect' (its own missile, batted back). */
-  _bossHit(source) {
+  /** source: 'breath' or 'reflect' (its own missile, batted back); n: hit points it takes off. */
+  _bossHit(source, n = 1) {
     const boss = this.boss;
     if (source === 'breath') this.bossHitThisBreath = true;
-    const dead = boss.hit();
+    const dead = boss.hit(n);
     this._blast(boss.x - 1, boss.y, 0.8);
     if (!dead) {
       this.hud.toast(source === 'reflect' ? `Its own missile! · ${boss.hp} to go` : `Direct hit · ${boss.hp} to go`, 1100);
@@ -1895,7 +1958,9 @@ export class Game {
       // gliding monsters (the Moth Queen) fall slowly while jump is held on the way down
       this.gliding = !!this.monster.glide && playing && !this.grounded && this.vy < 0 && this.input.jump && !this.input.duck;
       if (!this.grounded) {
-        let g = CFG.gravity * (this.input.duck ? CFG.fastFall : 1);
+        const diving = this.monster.trait === 'dive' && this.input.duck && playing;
+        if (diving) this.diveT = DIVE_WINDOW; else if (this.diveT > 0) this.diveT -= dt;
+        let g = CFG.gravity * (this.input.duck ? (diving ? DIVE_FALL : CFG.fastFall) : 1);
         if (this.gliding) g *= CFG.glideGravity;
         if (this.cutPending && this.y >= CFG.minCutHeight && this.vy > CFG.jumpCut) {
           this.vy = CFG.jumpCut;
@@ -1909,6 +1974,8 @@ export class Game {
           this.vy = 0;
           this.grounded = true;
           this.cutPending = false;
+          this.airJumps = 1;
+          if (this.diveT > 0 && this.state === 'running') { this.diveT = 0; this._sonicBoom(); }
           if (this.state !== 'dying') this._haptic(8);
           if (this.state !== 'dying') {
             if (this.dragon.flyer) {
@@ -1938,7 +2005,7 @@ export class Game {
     this.breathGlow = 0;
     if (this.breathT > 0) {
       this.breathT -= dt;
-      const el = CFG.breathTime - this.breathT;
+      const el = this.breathDur - this.breathT;
       breathAmt = smooth(0, 0.12, el) * smooth(0, 0.25, this.breathT);
       const mouth = this.dragon.getMouthWorld(this._mouth);
       const len = Math.min(CFG.breathRange, el * 75);
@@ -1967,6 +2034,8 @@ export class Game {
       const nSide = this.dragon.getSideMouths(this._sideMouths);
       this.sideBeams.forEach((b, i) => b.set(this._sideMouths[i], i < nSide ? len * 0.85 : 0, 0.4 + 0.1 * Math.sin(this.time * 33 + i),
         i < nSide ? breathAmt : 0, this.time, aim + (i ? 0.05 : -0.05)));
+      // the Moth Queen's SCALE STORM: the beam sweeps up the crystals it touches
+      if (this.monster.trait === 'scale' && breathAmt > 0.2) this.crystals.collect(mouth.x - 1, mouth.x + len, (c) => this._pickCrystal(c));
       let burned = 0;
       for (const o of this.obstacles.active) {
         if (!o.dead && o.x - o.width / 2 < mouth.x + len && o.x > mouth.x - 2) {
@@ -1990,7 +2059,7 @@ export class Game {
       if (boss.state === 'fight' && !this.bossHitThisBreath && breathAmt > 0.5) {
         const b = boss.box(this._bossBox);
         if (Math.hypot(b[0] - mouth.x, boss.y - mouth.y) < len) {
-          this._bossHit('breath');
+          this._bossHit('breath', this.monster.trait === 'flap' ? 2 : 1); // the Hydra's three mouths hit twice as hard
           if (teeth) this.teeth.erupt(b[0], 0, boss.y + 0.6, { hold: 0.9 });
         }
       }
@@ -2224,6 +2293,15 @@ export class Game {
     this.footprints.update(dt, this.speed);
     this.teeth.update(dt, this.state === 'over' ? 0 : this.speed);
     this.shards.update(dt, this.state === 'over' ? 0 : this.speed);
+    if (this.burstT > 0) {
+      this.burstT += realDt;
+      const k = Math.min(1, this.burstT / 0.55), r = 1 + 7.5 * (1 - (1 - k) ** 2);
+      this.burstRing.visible = k < 1;
+      this.burstRing.position.set(1.5, 0.25, 0);
+      this.burstRing.scale.set(r, 1, r * 0.8);
+      this.burstRing.material.opacity = 1 - k;
+      if (k >= 1) this.burstT = 0;
+    }
     if (this.state !== 'loading') runAOQueue(this.state === 'running' ? 2 : 6); // baked shading, a slice per frame
     this._contactShadows();
     const pxScale = this.renderer.pixelHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));

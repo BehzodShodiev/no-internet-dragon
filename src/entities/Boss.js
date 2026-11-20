@@ -127,10 +127,10 @@ export class Boss {
     this.group.visible = false;
   }
 
-  /** A breath hit. Returns true when it was the killing blow. */
-  hit() {
+  /** A breath hit taking n hit points. Returns true when it was the killing blow. */
+  hit(n = 1) {
     if (this.state !== 'fight') return false;
-    this.hp--;
+    this.hp = Math.max(0, this.hp - n);
     this.flinch = 1;
     // A hit never cancels the volley being aimed (otherwise fast breaths keep it from ever firing);
     // instead it retaliates sooner.
