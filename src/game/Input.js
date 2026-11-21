@@ -13,7 +13,7 @@ export class Input {
     // Game sets this: whether menus are up (keyboard users may then press focused buttons)
     this.allowUi = () => true;
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       // Space / Enter on a keyboard-focused button press that button (menus only; in a run they're game keys)
       if ((e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') && this._uiFocus(e.target)) return;
       if (JUMP.includes(e.code)) {

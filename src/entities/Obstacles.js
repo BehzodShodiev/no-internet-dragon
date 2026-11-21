@@ -322,6 +322,7 @@ export class Obstacles {
     this.jump = { v: 19.6, g: 58 }; // the dragon's full jump, used to lay crystals along its arc
     this.director = new Director(); // tempo phases and set pieces (Patterns.js)
     this.onPiece = null; // set by the game: a set piece began spawning (for its banner)
+    this.script = []; // Bootcamp: items spawned one at a time before anything else ({type, n, y, prompt})
     this.rushT = 0;
     this.onFire = null;
     this.root = new THREE.Group();
@@ -397,6 +398,7 @@ export class Obstacles {
   }
 
   reset(seed = this.seed ?? 2024) {
+    this.script = [];
     for (const o of this.active) this._release(o);
     this.active.length = 0;
     for (const w of this.wrecks) this._release(w);
@@ -459,6 +461,9 @@ export class Obstacles {
     o.resp = null; // answer override for this instance (see respond)
     o.jam = 0; // cars in a traffic jam
     o.mine = false; // an artillery strike dropped by a gunship (spawnMine)
+    o.script = null; // the Bootcamp item it came from
+    o.prompt = null; // Bootcamp: what the player is asked to do about it
+    o.coached = false;
     o.smash = SMASH[type];
     o.tall = !!TALL[type];
     o.t = this.rand() * 10;
@@ -1000,8 +1005,12 @@ export class Obstacles {
     let type;
     let item = null; // a set-piece item
     let piece = null; // the set piece that starts with this spawn
+    let scripted = null;
     if (this.pendingShooter) type = this.pendingShooter; // 'tank' or 'heli', held back for room to fire
-    else {
+    else if (this.script.length) {
+      scripted = item = this.script.shift(); // Bootcamp: one taught obstacle at a time
+      type = item.type;
+    } else {
       piece = dir.start(this.stage, speed, this.cycle, this.rand);
       item = dir.queue.shift() || null;
       if (item) type = item.type;
@@ -1056,6 +1065,11 @@ export class Obstacles {
       o = this._spawnCactus(type, item?.n ? Math.min(item.n, maxCount) : 1 + Math.floor(this.rand() * maxCount));
     }
     if (piece) this.onPiece?.(piece, o);
+    if (scripted) {
+      o.script = scripted;
+      o.prompt = scripted.prompt;
+      if (scripted.y != null) { o.y = scripted.y; o.vx = 0.6; }
+    }
     const airborne = type === 'ptero' || type === 'heli';
     const flyer = airborne && !o.shooter; // flies in faster than the ground (a gunner hovers in place, like a tank)
     if (!airborne) o.y = 0;
@@ -1093,6 +1107,7 @@ export class Obstacles {
       const [a, b] = GAP[dir.phase];
       this.nextGap = minGap + (a + this.rand() * (b - a)) * (maxGap - minGap);
     }
+    if (scripted) this.nextGap = Math.max(this.nextGap, speed * 2.6 + 12); // Bootcamp: room to breathe between lessons
     // crystal arcs ride with the ground; a charger would outrun its own and break the combo, so it gets none
     if (!airborne && type !== 'boulder' && type !== 'jeep') this._layCrystals(o, speed, long);
   }

@@ -7,6 +7,8 @@ import { Music } from './Music.js';
 const OUT_LEVEL = 0.78;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
+const MUSIC_LEVEL = 0.36; // the music bus at full volume (the settings slider scales it)
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -17,6 +19,9 @@ export class AudioEngine {
     // music can be switched off on its own (sound effects stay): some players avoid music
     this.musicOn = true;
     try { this.musicOn = localStorage.getItem('dragon.music') !== '0'; } catch { /* storage unavailable */ }
+    // volumes from the settings panel (0..1 each)
+    this.vol = { music: 1, sfx: 1 };
+    try { Object.assign(this.vol, JSON.parse(localStorage.getItem('dragon.vol') || '{}')); } catch { /* storage unavailable */ }
   }
 
   init() {
@@ -52,11 +57,11 @@ export class AudioEngine {
     clip.curve = cc;
     this.out.connect(glue).connect(limiter).connect(clip).connect(ctx.destination);
     const bus = (v) => { const g = ctx.createGain(); g.gain.value = v; g.connect(this.out); return g; };
-    this.master = bus(0.8); // sound effects
-    this.musicLevel = 0.36;
+    this.master = bus(0.8 * this.vol.sfx); // sound effects
+    this.musicLevel = MUSIC_LEVEL * this.vol.music;
     this.musicBus = bus(this.musicOn ? this.musicLevel : 0);
-    this.uiBus = bus(0.5);
-    this.amb = bus(0.9);
+    this.uiBus = bus(0.5 * this.vol.sfx);
+    this.amb = bus(0.9 * this.vol.sfx);
     // reverb send (impulse per biome, see setBiome)
     this.reverb = ctx.createConvolver();
     const rev = ctx.createGain();
@@ -211,6 +216,19 @@ export class AudioEngine {
     const g = this.musicBus.gain, t = this.ctx.currentTime;
     g.cancelScheduledValues(t);
     g.setTargetAtTime(on ? this.musicLevel : 0, t, 0.15);
+  }
+
+  /** Music and sound-effect volumes, 0..1 each (the settings panel); remembered in this browser. */
+  setVolumes(music, sfx) {
+    this.vol = { music, sfx };
+    try { localStorage.setItem('dragon.vol', JSON.stringify(this.vol)); } catch { /* ignore */ }
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.musicLevel = MUSIC_LEVEL * music;
+    if (this.musicOn) this.musicBus.gain.setTargetAtTime(this.musicLevel, t, 0.1);
+    this.master.gain.setTargetAtTime(0.8 * sfx, t, 0.05);
+    this.uiBus.gain.setTargetAtTime(0.5 * sfx, t, 0.05);
+    this.amb.gain.setTargetAtTime(0.9 * sfx, t, 0.05);
   }
 
   setMuted(m) {

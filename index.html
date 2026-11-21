@@ -34,6 +34,9 @@
           <button id="btn-fullscreen" class="btn icon" title="Fullscreen" aria-label="Fullscreen">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
           </button>
+          <button id="btn-settings" class="btn icon" title="Settings" aria-label="Settings">
+            <svg viewBox="0 0 24 24"><path d="M10.6 2h2.8l.5 2.6c.7.2 1.3.5 1.9.9l2.4-1.2 2 2-1.2 2.4c.4.6.7 1.2.9 1.9l2.6.5v2.8l-2.6.5c-.2.7-.5 1.3-.9 1.9l1.2 2.4-2 2-2.4-1.2c-.6.4-1.2.7-1.9.9l-.5 2.6h-2.8l-.5-2.6a7 7 0 0 1-1.9-.9l-2.4 1.2-2-2 1.2-2.4a7 7 0 0 1-.9-1.9L2 13.4v-2.8l2.6-.5c.2-.7.5-1.3.9-1.9L4.3 5.8l2-2 2.4 1.2c.6-.4 1.2-.7 1.9-.9zM12 8.6a3.4 3.4 0 1 0 0 6.8 3.4 3.4 0 0 0 0-6.8z" /></svg>
+          </button>
           <button id="btn-board" class="btn icon hidden" title="Leaderboard (L)" aria-label="Leaderboard">
             <svg viewBox="0 0 24 24"><path d="M7 3h10v2h3v3a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V17h3v4H8v-4h3v-2.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V5h3V3zm-1 4v1a2 2 0 0 0 1.4 1.9A9 9 0 0 1 7 7H6zm11 0a9 9 0 0 1-.4 2.9A2 2 0 0 0 18 8V7h-1z" /></svg>
           </button>
@@ -66,6 +69,7 @@
         <div class="boss-hp" id="boss-hp"></div>
       </div>
       <div id="banner" class="banner" aria-live="polite"><small id="banner-sub"></small><b id="banner-title"></b></div>
+      <div id="coach" class="coach hidden" aria-live="assertive"><b id="coach-text"></b><small id="coach-sub"></small></div>
       <div id="popups"></div>
       <div id="warnings"></div>
 
@@ -156,6 +160,8 @@
         <div><span>BEST</span><b id="final-best">00000</b></div>
       </div>
       <div id="new-best" class="hidden">NEW HIGH SCORE</div>
+      <div id="over-break" class="over-break" aria-label="Score breakdown"></div>
+      <div id="over-next" class="over-next hidden"></div>
       <p id="over-stats" class="over-stats"></p>
       <div id="over-board" class="over-board hidden">
         <div id="over-rank" class="over-rank"></div>
@@ -193,12 +199,63 @@
       </div>
     </section>
 
-    <section id="pause" class="hidden">
+    <section id="pause" class="hidden" role="dialog" aria-label="Paused">
       <div class="over-title">PAUSED</div>
-      <button id="btn-resume" class="primary">
-        <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-        Resume
-      </button>
+      <div class="pause-menu">
+        <button id="btn-resume" class="primary">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+          Resume
+        </button>
+        <button id="btn-restart-run" class="menu-btn" type="button">Restart run</button>
+        <button id="btn-settings-pause" class="menu-btn" type="button">Settings</button>
+        <button id="btn-quit" class="menu-btn" type="button">Quit to title</button>
+      </div>
+      <p class="hint">Restarting or quitting ends the run: your score so far still counts.</p>
+    </section>
+
+    <section id="settings" class="hidden" role="dialog" aria-label="Settings">
+      <div class="board-panel settings-panel">
+        <header>
+          <h2>Settings</h2>
+          <button id="btn-settings-close" class="btn icon" aria-label="Close settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+          </button>
+        </header>
+        <div class="set-grid">
+          <label for="set-music">Music volume</label><input type="range" id="set-music" min="0" max="100" step="5" />
+          <label for="set-sfx">Sound effects</label><input type="range" id="set-sfx" min="0" max="100" step="5" />
+          <label for="set-quality">Graphics</label><select id="set-quality"></select>
+          <label for="set-motion">Reduce motion and flashes</label><input type="checkbox" id="set-motion" />
+        </div>
+        <h3 class="set-keys-h">Controls</h3>
+        <dl class="set-keys">
+          <dt><kbd>Space</kbd> <kbd>↑</kbd></dt><dd>Jump (hold for a higher jump)</dd>
+          <dt><kbd>↓</kbd></dt><dd>Duck</dd>
+          <dt><kbd>→</kbd></dt><dd>Smash</dd>
+          <dt><kbd>F</kbd></dt><dd>Breath (when the meter is full)</dd>
+          <dt><kbd>R</kbd></dt><dd>Kaiju Rage (when the meter is full)</dd>
+          <dt><kbd>V</kbd></dt><dd>2D or 3D view</dd>
+          <dt><kbd>P</kbd> <kbd>Esc</kbd></dt><dd>Pause</dd>
+          <dt><kbd>M</kbd> <kbd>N</kbd></dt><dd>Sound, music on or off</dd>
+          <dt><kbd>B</kbd> <kbd>L</kbd> <kbd>K</kbd></dt><dd>Monsters, leaderboard, next skin</dd>
+        </dl>
+        <button id="btn-tutorial" class="menu-btn set-tutorial" type="button">Play Bootcamp again on the next Desert run</button>
+        <p class="set-touch">On a touch screen: tap anywhere to jump; the buttons duck, smash, breathe and rage.</p>
+      </div>
+    </section>
+
+    <section id="reveal" class="hidden" role="dialog" aria-label="New monster">
+      <div class="reveal-card">
+        <small>NEW MONSTER UNLOCKED</small>
+        <div class="reveal-art" id="reveal-art"></div>
+        <b id="reveal-name"></b>
+        <p id="reveal-note"></p>
+        <p class="reveal-trait" id="reveal-trait"></p>
+        <div class="reveal-actions">
+          <button id="btn-reveal-play" class="primary" type="button">Play now</button>
+          <button id="btn-reveal-later" class="menu-btn" type="button">Later</button>
+        </div>
+      </div>
     </section>
 
     <div id="loading">

@@ -27,8 +27,8 @@ const KEYS = {
 for (const c of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') KEYS['Key' + c] = [c.toLowerCase(), c.charCodeAt(0)];
 
 export class Session {
-  /** opts: { w, h, dpr, mobile } */
-  static async launch({ w = 1280, h = 720, dpr = 1, mobile = false } = {}) {
+  /** opts: { w, h, dpr, mobile, bootcamp } (bootcamp: let a fresh profile get the guided first run) */
+  static async launch({ w = 1280, h = 720, dpr = 1, mobile = false, bootcamp = false } = {}) {
     const chromePath = findChrome();
     if (!chromePath) throw new Error('Chrome not found: set CHROME to its path');
     const port = 9300 + Math.floor(Math.random() * 600);
@@ -54,6 +54,7 @@ export class Session {
     await s.send('Page.enable');
     await s.send('Emulation.setDeviceMetricsOverride', { width: w, height: h, deviceScaleFactor: dpr, mobile });
     if (mobile) await s.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    if (!bootcamp) await s.send('Page.addScriptToEvaluateOnNewDocument', { source: "try { localStorage.setItem('dragon.tutorial', 'done'); } catch (e) {}" });
     return s;
   }
 

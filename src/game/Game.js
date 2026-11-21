@@ -15,6 +15,7 @@ import { TRAITS, BREATH_TIME, DIVE_FALL, DIVE_WINDOW } from './Traits.js';
 import { Crystals } from '../entities/Crystals.js';
 import { Gunship } from '../entities/Boss.js';
 import { Dreadnought } from '../entities/Dreadnought.js';
+import { SCRIPT, PROMPTS, COACH_SLOW, COACH_WAIT, ANSWERS, wantsBootcamp } from './Bootcamp.js';
 import { SKINS } from '../entities/Skins.js';
 import { MONSTERS } from '../entities/Monsters.js';
 import { Progress } from './Progress.js';
@@ -243,6 +244,7 @@ export class Game {
     this.stormLeft = 0;
     this.viewHintT = 8; // seconds into the run before the 3D hint (see _viewHint)
     this.score = 0;
+    this.tally = { distance: 0, smash: 0, close: 0, crystal: 0, burn: 0, boss: 0 }; // where the score came from
     this.dist = 0;
     this.chain = 0;
     this.mult = 1;
@@ -780,7 +782,9 @@ export class Game {
     this.hud.onBoardTab = () => this._onBoard();
     inp.on('view', () => this.toggleView());
     inp.on('pause', () => {
-      if (this.hud.isMonstersOpen()) this.toggleMonsters(false);
+      if (this.hud.isRevealOpen()) this.hud.hideReveal();
+      else if (this._settingsOpen()) this.toggleSettings(false);
+      else if (this.hud.isMonstersOpen()) this.toggleMonsters(false);
       else if (this.hud.isBoardOpen()) this.toggleBoard(false);
       else if (this.state === 'over') this._toTitle(); // Esc from game over: back to the title menu
       else this.togglePause();
@@ -815,6 +819,14 @@ export class Game {
     click('btn-restart', () => this._onJump());
     click('btn-menu-over', () => this._toTitle());
     click('btn-resume', () => this.togglePause(false));
+    click('btn-restart-run', () => this._endFromPause('restart'));
+    click('btn-quit', () => this._endFromPause('title'));
+    click('btn-settings', () => this.toggleSettings());
+    click('btn-settings-pause', () => this.toggleSettings(true));
+    click('btn-settings-close', () => this.toggleSettings(false));
+    click('btn-tutorial', () => { store.set('dragon.tutorial', 'again'); this.hud.toast('Bootcamp starts on your next Desert run', 2200); });
+    document.getElementById('settings').addEventListener('click', (e) => { if (e.target.id === 'settings') this.toggleSettings(false); });
+    this._bindSettings();
     click('btn-board', () => this.toggleBoard());
     click('btn-board-more', () => this.toggleBoard(true));
     click('btn-board-close', () => this.toggleBoard(false));
@@ -826,9 +838,66 @@ export class Game {
     document.querySelectorAll('[data-act]').forEach((el) => inp.bindButton(el, el.dataset.act));
   }
 
+  // ------------------------------------------------------------------ settings and the pause menu
+  _settingsOpen() {
+    return !document.getElementById('settings').classList.contains('hidden');
+  }
+
+  /** The settings panel; opening it during a run pauses the run. */
+  toggleSettings(force) {
+    const el = document.getElementById('settings');
+    const on = force ?? el.classList.contains('hidden');
+    if (on && (this.state === 'running' || this.state === 'intro')) this.togglePause(true);
+    if (on) this._fillSettings();
+    el.classList.toggle('hidden', !on);
+    this.audio.ui?.(on ? 'open' : 'close');
+    if (on) document.getElementById('set-music').focus();
+    else if (this.state === 'paused') document.getElementById('btn-resume').focus();
+  }
+
+  _fillSettings() {
+    const v = this.audio.vol;
+    document.getElementById('set-music').value = Math.round(v.music * 100);
+    document.getElementById('set-sfx').value = Math.round(v.sfx * 100);
+    document.getElementById('set-motion').checked = this.reducedMotion;
+    document.getElementById('set-quality').value = this.settings.quality;
+  }
+
+  _bindSettings() {
+    const $ = (id) => document.getElementById(id);
+    const sel = $('set-quality');
+    for (const q of ['auto', 'veryhigh', 'high', 'medium', 'low', 'verylow']) {
+      const o = document.createElement('option');
+      o.value = q;
+      o.textContent = q === 'auto' ? 'Auto' : qualityLabel(q).replace(/\B\w+/g, (w) => w.toLowerCase());
+      sel.append(o);
+    }
+    sel.addEventListener('change', () => this._setQuality(sel.value, true));
+    const vol = () => this.audio.setVolumes($('set-music').value / 100, $('set-sfx').value / 100);
+    $('set-music').addEventListener('input', vol);
+    $('set-sfx').addEventListener('input', () => { vol(); this.audio.ui?.('select'); });
+    $('set-motion').addEventListener('change', (e) => {
+      this.reducedMotion = e.target.checked;
+      this.rig.reducedMotion = this.reducedMotion;
+      store.set('dragon.motion', this.reducedMotion ? 'reduce' : 'full');
+    });
+  }
+
+  /** Pause menu: end the run here (the score so far counts, as at a death), then restart or go to the title. */
+  _endFromPause(next) {
+    if (this.state !== 'paused') return;
+    this.togglePause(false);
+    this._recordRun();
+    this.state = 'over';
+    this.overT = 1;
+    if (next === 'restart') this._restart();
+    else this._toTitle();
+  }
+
   // ------------------------------------------------------------------ state changes
   _onJump() {
     this.audio.init();
+    if (this._settingsOpen() || this.hud.isRevealOpen()) return;
     if (this.hud.isMonstersOpen()) return this.toggleMonsters(false);
     if (this.hud.isBoardOpen()) return this.toggleBoard(false);
     if (this.state === 'title') return this._startIntro();
@@ -838,6 +907,7 @@ export class Game {
     }
     if (this.state === 'paused') return this.togglePause(false);
     if (this.state === 'running' || this.state === 'intro') {
+      this._act('jump');
       if (this.grounded) this._doJump();
       else if (this.monster.trait === 'flap' && this.airJumps > 0 && this.y > 0.6 && this.state === 'running') this._flap();
       else this.jumpBuf = CFG.jumpBuffer; // pressed a moment early: jump on landing
@@ -906,6 +976,108 @@ export class Game {
     this._resetRun();
     this.pace = 0;
     this.pendingBanner = { t: 0.4, sub: `LEVEL ${this.level.id} · STAGE 1`, title: this.stages.current.title, kind: '' };
+    if (wantsBootcamp(this, store)) this._beginBootcamp();
+    else this._monsterTip();
+  }
+
+  /** A monster was just unlocked: its card full screen, with Play now (pick it and run) or Later. */
+  _reveal(m) {
+    this.pendingReveal = null;
+    const tr = TRAITS[m.trait];
+    const line = [m.attackName, tr && tr.name].filter(Boolean).join(' · ');
+    this.hud.showReveal(m, line, () => {
+      this.hud.hideReveal();
+      this.selectMonster(m.id);
+      this.overT = 1;
+      this._restart();
+    }, () => this.hud.hideReveal());
+  }
+
+  /** Game over v2: where the score came from, and the next monster to earn. */
+  _overExtra() {
+    const t = this.tally;
+    const rows = [['Distance', t.distance], ['Smashes', t.smash], ['Close calls', t.close], ['Crystals', t.crystal], ['Burned', t.burn], ['Bosses', t.boss]];
+    let next = null;
+    for (const m of MONSTERS) {
+      if (!m.goal || this.progress.isUnlocked(m)) continue;
+      const p = this.progress.progressOf(m);
+      next = { name: m.name, text: m.goal.text, value: p.value, need: p.need };
+      break;
+    }
+    return { rows, next, instant: this.reducedMotion || !!this.sim };
+  }
+
+  // ------------------------------------------------------------------ Kaiju Bootcamp
+  _beginBootcamp() {
+    this.bootcamp = { snap: JSON.parse(JSON.stringify(this.progress.stats)), wait: null, acts: {}, endT: -1 };
+    this.obstacles.script = SCRIPT.map((s) => ({ ...s }));
+    this.obstacles.nextGap = 26;
+    this.pendingBanner = { t: 0.4, sub: 'YOUR FIRST RUN', title: 'KAIJU BOOTCAMP', kind: '' };
+  }
+
+  /** An action the player took (Bootcamp checks it against the prompt that is waiting). */
+  _act(kind) {
+    if (this.bootcamp) this.bootcamp.acts[kind] = this.time;
+  }
+
+  /** Bootcamp, every frame: prompt the next taught obstacle as it gets close, and finish when the script is done. */
+  _coach(realDt) {
+    const bc = this.bootcamp;
+    if (!bc || this.state !== 'running') return;
+    if (this.input.duck) bc.acts.duck = this.time;
+    const touch = this.coarseMQ.matches;
+    let o = null;
+    for (const q of this.obstacles.active) if (q.prompt && !q.coached && !q.dead && !q.passed && (!o || q.x < o.x)) o = q;
+    if (o && o.x - o.width / 2 - 2.6 < 6 + 0.35 * this.speed) {
+      o.coached = true;
+      if (o.script.charge) this.charge = 1;
+      const p = PROMPTS[o.prompt];
+      this.hud.coach(touch ? p.touch : p.key, p.sub);
+      bc.wait = { o, t: 0, from: this.time, need: ANSWERS[o.prompt] };
+    }
+    const w = bc.wait;
+    if (w) {
+      w.t += realDt;
+      const answered = w.need.some((k) => (bc.acts[k] ?? -1) >= w.from);
+      w.slow = w.need.length > 0 && !answered && w.t < COACH_WAIT && !w.o.dead;
+      if (!w.slow && (w.o.dead || w.o.passed || w.t > COACH_WAIT + 1.2)) { bc.wait = null; this.hud.coach(''); }
+    }
+    if (!this.obstacles.script.length && !this.obstacles.active.some((q) => q.script && !q.dead && !q.passed) && !bc.wait) {
+      if (bc.endT < 0) bc.endT = this.time;
+      if (this.time - bc.endT > 0.8) this._endBootcamp(true);
+    }
+  }
+
+  /** Bootcamp is over (done: finished, or abandoned): nothing it scored or collected counts. */
+  _endBootcamp(done) {
+    const bc = this.bootcamp;
+    if (!bc) return;
+    this.bootcamp = null;
+    this.hud.coach('');
+    this.obstacles.script = [];
+    this.progress.stats = bc.snap;
+    store.set('dragon.tutorial', 'done');
+    if (!done) return;
+    // the real run starts here, from zero
+    this.score = 0;
+    this.dist = 0;
+    this.tally = { distance: 0, smash: 0, close: 0, crystal: 0, burn: 0, boss: 0 };
+    this.chain = 0;
+    this.mult = 1;
+    this.bestMult = 1;
+    this.crystalsRun = 0;
+    this.smashes = 0;
+    this.breathKills = 0;
+    this.perfects = 0;
+    this.rage = 0;
+    this.charge = CFG.breathStart;
+    this.stages.reset();
+    this.obstacles.stage = this.stages.current.key;
+    this.hud.setScore(0, 0);
+    this.hud.setCombo(1, 0);
+    this.hud.setRage(0, false, false);
+    this.hud.banner('BOOTCAMP COMPLETE', `LEVEL ${this.level.id} · ${this.stages.current.title}`, 'clear');
+    this.audio.music?.stinger('clear');
     this._monsterTip();
   }
 
@@ -937,7 +1109,8 @@ export class Game {
     this.hud.setScore(0, 0);
     this._roar(0.9, 1.15);
     this.hud.banner(`LEVEL ${this.level.id} · STAGE 1`, this.stages.current.title);
-    this._monsterTip();
+    if (wantsBootcamp(this, store)) this._beginBootcamp();
+    else this._monsterTip();
   }
 
   /** From the game-over screen back to the level picker. */
@@ -972,6 +1145,12 @@ export class Game {
     this.rig.shake(1.0);
     this.audio.hit(this.monster.voice ?? 1, this.monster.sound?.roar);
     this._dustBurst(1.4, 40, 3);
+    this._recordRun();
+  }
+
+  /** A run ends: personal best, lifetime stats, unlocks, and the leaderboard post. */
+  _recordRun() {
+    if (this.bootcamp) { this._endBootcamp(false); this.lastRun = null; return; }
     const s = Math.floor(this.score);
     this.isBest = s > this.hi;
     if (this.isBest) {
@@ -991,8 +1170,8 @@ export class Game {
     if (unlocked.length) {
       const m = unlocked[0];
       this.hud.banner('NEW MONSTER UNLOCKED', m.name.toUpperCase(), 'clear');
-      this.hud.toast(m.name + ' unlocked! Pick it in Monsters (B).', 4200);
       this.audio.music?.stinger('unlock');
+      this.pendingReveal = this.sim ? null : m; // shown over the game-over screen
     }
     if (this.board.enabled && !this.sim) {
       this.board.submit(this.level.field, s, { view: this.rig.mode, stage: this.stages.number }).then((ok) => {
@@ -1202,6 +1381,7 @@ export class Game {
 
   // ------------------------------------------------------------------ gameplay helpers
   _breath() {
+    this._act('breath');
     if (this.state !== 'running' || this.breathT > 0) return;
     // the Kaiju's CRYSTAL BURST: duck + breath with the meter half full (a full meter always fires the beam)
     if (this.monster.trait === 'burst' && this.input.duck && this.charge >= 0.5 && this.charge < 1) { this._crystalBurst(); return; }
@@ -1232,6 +1412,7 @@ export class Game {
 
   _smash() {
     if (this.state !== 'running' || this.smashT > 0 || this.smashCool > 0) return;
+    this._act('smash');
     this.smashT = CFG.smashTime;
     this.smashHit = false;
     this.audio.swing();
@@ -1293,6 +1474,7 @@ export class Game {
     const bonus = Math.min(2, (perfect ? 2 : 1) * (this.streak >= 3 ? 1.5 : this.streak === 2 ? 1.25 : 1) * (sky ? 1.5 : 1));
     const pts = this._pts(o.smash * bonus);
     this.score += pts;
+    this.tally.smash += pts;
     this._setChain(this.chain + (perfect ? 2 : 1));
     this._addRage(CFG.smashRage / this.level.rageCrystals);
     const label = o.jam > 1 ? `TRAFFIC JAM ×${o.jam}` : perfect ? 'PERFECT' : sky ? 'SKY BITE' : this.streak >= 3 ? 'TRIPLE SMASH' : this.streak === 2 ? 'DOUBLE SMASH' : 'SMASH';
@@ -1430,6 +1612,7 @@ export class Game {
     this._addRage(1 / this.level.rageCrystals); // harder levels need more crystals
     const pts = this._pts(CFG.crystalPoints);
     this.score += pts;
+    this.tally.crystal += pts;
     this.audio.crystal(this.chain);
     this._popup(`+${pts}`, c.x, c.y + 0.4, 'pick');
     for (let i = 0; i < 10; i++) {
@@ -1460,6 +1643,7 @@ export class Game {
       c++;
       const pts = this._pts(CFG.closePoints);
       this.score += pts;
+      this.tally.close += pts;
       this._addRage(CFG.rageCrystals / (15 * this.level.rageCrystals));
       this.audio.closeCall();
       this._popup(`CLOSE! +${pts}`, 1, 3.4, 'close');
@@ -1732,6 +1916,7 @@ export class Game {
     }
     const pts = this._pts(points);
     this.score += pts;
+    this.tally.burn += pts;
     this._popup(`+${pts}`, o.x, o.y + 2.2, 'kill');
   }
 
@@ -1812,6 +1997,7 @@ export class Game {
     this.progress.add('gunships');
     const pts = this._pts(CFG.bossPoints);
     this.score += pts;
+    this.tally.boss += pts;
     this._popup(`+${pts}`, boss.x, boss.y + 1.6, 'big');
     this.hud.setBoss('', 0, boss.maxHp);
     this.hud.banner('STAGE CLEAR', `${boss.noun.toUpperCase()} DOWN`, 'clear');
@@ -1936,7 +2122,8 @@ export class Game {
           + (this.bossesDowned ? ` · ${this.bossesDowned} boss${this.bossesDowned > 1 ? 'es' : ''} down` : '')
           + ` · stage ${this.stages.number}`
           + (this.seedFixed || this.debug || this.sim ? ` · seed ${this.seed}` : '');
-        this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
+        this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats, this._overExtra());
+        if (this.pendingReveal) this._reveal(this.pendingReveal);
         this.audio.music?.stinger(this.isBest ? 'best' : 'over');
         if (this.pendingPreset) this._autoPreset(this.pendingPreset); // a quality change waits for the run to end
         this._applyModels();
@@ -1954,6 +2141,7 @@ export class Game {
       this.slowT -= realDt;
       dt = realDt * 0.35; // slow motion as the gunship goes down
     }
+    if (this.bootcamp?.wait?.slow && this.state === 'running') dt = realDt * COACH_SLOW; // Bootcamp: time slows for the lesson
     if (this.hitStopT > 0) {
       this.hitStopT -= realDt;
       if (this.state === 'running') dt *= 0.08; // freeze-frame on a smash
@@ -1985,7 +2173,8 @@ export class Game {
       const step = this.speed * dt * CFG.scoreRate;
       const before = Math.floor(this.dist / 100);
       this.dist += step;
-      this.score += step * this.mult * this.scoreK; // slimmer builds (and gliding) are easier, so they score a little less
+      this.score += step * this.mult * this.scoreK;
+      this.tally.distance += step * this.mult * this.scoreK; // slimmer builds (and gliding) are easier, so they score a little less
       if (Math.floor(this.dist / 100) > before) {
         this.audio.milestone();
         this.hud.milestone();
@@ -2024,6 +2213,7 @@ export class Game {
       this.obstacles.update(dt, this.speed, this.dist, hard);
     }
     if (running || this.state === 'dying') this._updateBoss(dt);
+    this._coach(realDt);
     if (this.pendingBanner && running) {
       this.pendingBanner.t -= realDt;
       if (this.pendingBanner.t <= 0) {
@@ -2252,7 +2442,15 @@ export class Game {
       } else this.smashCool = Math.max(0, this.smashCool - dt);
       const hit = this.debug ? null : this.obstacles.collide(this.boxes, n);
       if (hit) {
-        if (hit.smash === 'parry' && (this.rageT > 0 || this.graceT > 0)) this._parry(hit); // Rage shrugs a ram off
+        if (this.bootcamp) {
+          hit.dead = true;
+          this._explode(hit, 0);
+          this._popup('Again!', hit.x, 3.2, 'close');
+          // the step comes back once; missed twice, Bootcamp moves on (it must never trap anyone)
+          if (hit.script && !hit.script.retried) this.obstacles.script.unshift({ ...hit.script, retried: true });
+          if (this.bootcamp.wait?.o === hit) { this.bootcamp.wait = null; this.hud.coach(''); }
+          this.graceT = 0.6;
+        } else if (hit.smash === 'parry' && (this.rageT > 0 || this.graceT > 0)) this._parry(hit); // Rage shrugs a ram off
         else if (this.rageT > 0 && hit.smash === 'reflect') {
           // in Kaiju Rage, shells and missiles that touch you are batted straight back
           this.obstacles.reflect(hit, this.speed);

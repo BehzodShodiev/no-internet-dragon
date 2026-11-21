@@ -29,7 +29,8 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 | Breath attack (when the meter is full) | `F` / `X` / `Shift` | flame button |
 | Kaiju Rage (when the rage meter is full) | `R` / `G` | rage button (appears when ready) |
 | Switch 2D / 3D | `V` / `C` | 2D/3D toggle (top left) |
-| Pause | `P` / `Esc` (the game also pauses when its window loses focus) | pause button |
+| Pause menu (resume, restart, settings, quit to title) | `P` / `Esc` (the game also pauses when its window loses focus) | pause button |
+| Settings (music and effect volumes, graphics, reduce motion and flashes, the controls, Bootcamp again) | gear button | gear button |
 | Back to the title (game over) | `Esc` | Main menu button |
 | Mute | `M` | speaker button |
 | Graphics quality | `Q` | quality button |
@@ -37,6 +38,10 @@ The game needs a browser with WebGL 2 (any current Chrome, Edge, Firefox or Safa
 | Pick a level (title / game over) | `1` `2` `3`, or `←` `→` on the title | level cards / buttons |
 | Pick a skin (title / game over) | `K` | colour swatches |
 | Monsters panel (title / game over) | `B` | Monster button |
+
+**Kaiju Bootcamp.** A player's very first run, on the Desert, opens with a guided stretch: a cactus, a pair, a pterodactyl to duck, a high one to run under, a watchtower to smash, a crystal arc and a cluster to burn with a full breath, one at a time. As each comes close, time slows and a big prompt says what to press, until you do it (or 3 seconds pass). A mistake doesn't end the run: the obstacle breaks with "Again!" and comes back once. Then "BOOTCAMP COMPLETE" and the real level starts from zero: nothing scored, collected or smashed in Bootcamp counts or is posted. Settings can turn it on again for the next Desert run (`src/game/Bootcamp.js`).
+
+**Pause, game over and unlocks.** The pause menu resumes, restarts the run, opens the settings or quits to the title (restart and quit end the run as a death would: the score so far still counts). The game-over screen counts the score up and breaks it down (distance, smashes, close calls, crystals, burned, bosses), shows the progress toward the next monster, and celebrates a new best. A newly unlocked monster gets a full-screen reveal with its card, its attack and ability, and **Play now** (pick it and run) or **Later**.
 
 The rules follow the classic offline runner. The speed ramps up over about two minutes. Pterodactyls appear after 250 points of distance at three heights: jump the low ones, duck the middle ones, run under the high ones. Army stages add **artillery strikes** (a red marker on the sand, then a shell lands there and leaves a crater to jump) and **gunner helicopters** that hover high and fire one shell (duck or jump it, or smash it back). Once per Desert Outpost run a **sandstorm** blows through (looks only), and an oasis sometimes drifts past in the dunes. Every 100 points of distance beeps, and the high score is saved. The monster's breath attack is the core addition: every run starts with the meter mostly full, it fills as you run (70 points of distance for a full charge), and when it's full it clears everything in front of you for bonus points. Pressing it early shows how far along the charge is. (Distance points are the score before the combo multiplier described below.)
 

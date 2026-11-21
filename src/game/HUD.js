@@ -206,11 +206,45 @@ export class HUD {
     if (node) node.classList.toggle('hidden', !on);
   }
 
-  gameOver(score, best, isBest, stats) {
-    this.el.finalScore.textContent = pad(score);
+  /**
+   * extra: { rows: [[label, points]], next: { name, text, value, need } | null, instant }.
+   * The score counts up (instant with reduced motion), the breakdown rows come in one by one.
+   */
+  gameOver(score, best, isBest, stats, extra = {}) {
+    const fs = this.el.finalScore;
     this.el.finalBest.textContent = pad(best);
     this.el.newBest.classList.toggle('hidden', !isBest);
     this.el.overStats.textContent = stats;
+    cancelAnimationFrame(this._countRaf);
+    if (extra.instant || score <= 0) fs.textContent = pad(score);
+    else {
+      const t0 = performance.now(), dur = Math.min(1100, 400 + score / 40);
+      const tick = (now) => {
+        const k = Math.min(1, (now - t0) / dur);
+        fs.textContent = pad(Math.round(score * (1 - Math.pow(1 - k, 3))));
+        if (k < 1) this._countRaf = requestAnimationFrame(tick);
+      };
+      fs.textContent = pad(0);
+      this._countRaf = requestAnimationFrame(tick);
+    }
+    const br = document.getElementById('over-break');
+    br.replaceChildren(...(extra.rows || []).filter((r) => r[1] > 0).map(([label, pts], i) => {
+      const d = el('div');
+      d.style.animationDelay = `${0.15 + i * 0.09}s`;
+      d.append(el('span', '', label), el('b', '', Math.round(pts).toLocaleString('en-US')));
+      return d;
+    }));
+    const nx = document.getElementById('over-next');
+    nx.classList.toggle('hidden', !extra.next);
+    if (extra.next) {
+      const n = extra.next;
+      const bar = el('div', 'bar');
+      const fill = el('i');
+      fill.style.width = '0%';
+      bar.append(fill);
+      nx.replaceChildren(el('span', '', `Next monster: ${n.name} · ${n.text} · ${n.value}/${n.need}`), bar);
+      requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${Math.round((100 * n.value) / n.need)}%`; }));
+    }
     this.show('over', true);
   }
 
@@ -233,6 +267,7 @@ export class HUD {
 
   setPaused(p) {
     this.el.pauseBtn.classList.toggle('paused', p);
+    this.el.hud.classList.toggle('paused-ui', p); // the stage banner hides behind the pause menu
     this.show('pause', p);
   }
 
@@ -310,14 +345,48 @@ export class HUD {
 
   // ------------------------------------------------------------------ monsters
   /** Builds the Monsters panel cards; onPick(id) selects, onPreview(id) is the owner's locked preview. */
+  /** The monster card's art (CSS background) for a monster id. */
+  artFor(id) {
+    return this._art?.[id] || 'linear-gradient(135deg, #333, #777)';
+  }
+
+  /** The unlock reveal: a monster's card, name, note and ability; onPlay / onLater for its buttons. */
+  showReveal(m, traitLine, onPlay, onLater) {
+    $('reveal-art').style.background = this.artFor(m.id);
+    $('reveal-name').textContent = m.name;
+    $('reveal-note').textContent = m.note || '';
+    $('reveal-trait').textContent = traitLine || '';
+    $('btn-reveal-play').onclick = (e) => { e.stopPropagation(); onPlay(); };
+    $('btn-reveal-later').onclick = (e) => { e.stopPropagation(); onLater(); };
+    $('reveal').classList.remove('hidden');
+    $('btn-reveal-play').focus();
+  }
+
+  hideReveal() {
+    $('reveal').classList.add('hidden');
+  }
+
+  isRevealOpen() {
+    return !$('reveal').classList.contains('hidden');
+  }
+
+  /** Bootcamp's big prompt above the track ('' hides it). */
+  coach(text, sub = '') {
+    const c = $('coach');
+    c.classList.toggle('hidden', !text);
+    if (!text) return;
+    $('coach-text').textContent = text;
+    $('coach-sub').textContent = sub;
+  }
+
   buildMonsters(monsters, onPick, onPreview) {
-    const art = {
+    const art = (this._art = {
       kaiju: 'linear-gradient(135deg, #2e3530 40%, #2dffb0)',
       ghidorah: 'linear-gradient(135deg, #10302a, #2a6650 55%, #b3c294)',
       rex: 'linear-gradient(135deg, #2c3618, #5c6b2e 50%, #c4925a)',
       stormwing: 'linear-gradient(160deg, #1a2230, #2b394b 45%, #7fe8ff 47%, #2b394b 50%, #5a6e86)',
       mothra: 'radial-gradient(circle at 76% 26%, #faf8ec 0 9%, transparent 10%), radial-gradient(circle at 80% 23%, #8ac0a0 0 8%, transparent 9%), linear-gradient(135deg, #704078, #80c096 45%, #d6ecc0)',
-    };
+    });
     const lock = '<svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h1zm2 0h6V8a3 3 0 0 0-6 0v2z"/></svg>';
     this.monsterCards = monsters.map((m) => {
       const card = el('div', 'mon-card');
