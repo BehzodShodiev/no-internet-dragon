@@ -51,6 +51,8 @@
       else if (r === 'duck') { if (t < 0.45) wantDuck = true; }
       else if (t < 0.17 && g.grounded && front > -1.5) { g.input.jump = true; g._onJump(); B.jumps++; holding = true; }
     }
+    // a boss laser fills head height: be down before it fires, and stay down while it lasts
+    if (g.boss.warnings.some((w) => w.kind === 'beam' && w.t < 0.35) || obs.active.some((q) => q.type === 'beam' && !q.dead)) wantDuck = true;
     if (holding && g.grounded && g.vy === 0) holding = false;
     // Gliders: past the top of a jump, keep holding (gliding) only while nothing is due before landing,
     // plus a moment to jump again; otherwise let go and drop on the normal arc. A glide is always at or

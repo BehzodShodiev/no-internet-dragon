@@ -352,7 +352,7 @@ kbd {
   animation: blink 0.22s steps(2) infinite;
 }
 .warn::after { content: '!'; }
-.warn.low::before, .warn.mid::before {
+.warn.low::before, .warn.mid::before, .warn.smash::before {
   position: absolute;
   top: 38px;
   font: 700 9px/1 var(--ui);
@@ -362,6 +362,8 @@ kbd {
 }
 .warn.low::before { content: 'JUMP'; }
 .warn.mid::before { content: 'DUCK'; }
+.warn.smash { background: rgba(255, 176, 32, 0.92); box-shadow: 0 0 18px rgba(255, 176, 32, 0.9); }
+.warn.smash::before { content: 'SMASH'; }
 @media (prefers-reduced-motion: reduce) { .warn { animation: none; } }
 
 #charge.ready .label { color: #c9f4ff; }

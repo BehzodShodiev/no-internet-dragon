@@ -13,7 +13,8 @@ import { StormWing } from '../entities/StormWing.js';
 import { Obstacles, SMASH, SILENT, TALL } from '../entities/Obstacles.js';
 import { TRAITS, BREATH_TIME, DIVE_FALL, DIVE_WINDOW } from './Traits.js';
 import { Crystals } from '../entities/Crystals.js';
-import { Boss } from '../entities/Boss.js';
+import { Gunship } from '../entities/Boss.js';
+import { Dreadnought } from '../entities/Dreadnought.js';
 import { SKINS } from '../entities/Skins.js';
 import { MONSTERS } from '../entities/Monsters.js';
 import { Progress } from './Progress.js';
@@ -192,7 +193,7 @@ export class Game {
     this._rigOpts = { aspect: 1, dragonY: 0, speed: 0, rage: 0, dead: 0, boss: 0 };
     this._crystalOpts = { magnet: 0, onPick: (c) => this._pickCrystal(c), onMiss: () => this._missCrystal() };
     this._bossCtx = {
-      home: null, yaw: 0,
+      home: null, yaw: 0, speed: 0,
       fire: (y, x0, y0) => {
         this.obstacles.spawnMissile(x0, y0, y, CFG.missileSpeed + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
         this.audio.missileLaunch(x0);
@@ -205,6 +206,22 @@ export class Game {
         for (let i = 0; i < 4; i++) this.sparks.emit(x0, y0, 0, -4 - Math.random() * 3, (Math.random() - 0.5) * 2, (Math.random() - 0.5), 0.08, 0.3, 0.06, 2, 1.2, 0.4, 1, 1, 0, 0);
       },
       drop: (x0, y0) => this.obstacles.spawnMine(x0, y0, 14, this.speed),
+      // the Dreadnought: a cannon shot into the road (a shockwave), the nose laser, the ram
+      shock: (x0, mx, my) => {
+        this.obstacles.spawnShock(x0, CFG.missileSpeed - 2 + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
+        this.audio.cannon();
+        this._blast(mx, my, 0.5);
+        this._blast(x0, 0.4, 0.7);
+        this.rig.shake(0.25);
+      },
+      beam: (x0, y) => {
+        this.audio.breath(0.7, 'gravity');
+        return this.obstacles.spawnBeam(x0, y, this.speed);
+      },
+      ram: (x0, vm) => {
+        this.audio.roar?.(0.6, 0.55, 'growl');
+        return this.obstacles.spawnRam(x0, vm, this.speed);
+      },
       smoke: (x, y) => this.dust.emit(x, y, (Math.random() - 0.5), Math.random() * 2, 1 + Math.random() * 2, 0, 1.4, 1, 4, 0.12, 0.11, 0.1, 0.6, 1.5, -0.4, 0),
       blast: (x, y, size) => this._blast(x, y, size),
       onGone: () => this._afterBoss(),
@@ -268,7 +285,8 @@ export class Game {
       this.obstacles.reset(this.seed);
       this.obstacles.cycle = 0;
       this.crystals.clear();
-      this.boss.reset();
+      for (const b of Object.values(this.bosses)) b.reset();
+      this.boss = this.bosses.gunship;
       this.debris.clear();
       this.blasts?.clear();
       this.supply?.reset(this.seed);
@@ -304,7 +322,7 @@ export class Game {
     this.dayT = lv.time ?? lv.startT;
     this.env.setTimeOfDay(this.dayT);
     // each level's gunship has its own livery
-    this.boss.mat.color.set(lv.id === 3 ? 0xff9a80 : lv.id === 2 ? 0xc4d0ff : 0xffffff);
+    this.bosses.gunship.mat.color.set(lv.id === 3 ? 0xff9a80 : lv.id === 2 ? 0xc4d0ff : 0xffffff);
   }
 
   /** Points for a scoring event: the combo multiplier and the skin's build (or the monster's score factor) both apply. */
@@ -524,7 +542,8 @@ export class Game {
     this.obstacles.onFire = (o) => this._tankFired(o);
     this.crystals = new Crystals(scene);
     this.obstacles.crystals = this.crystals;
-    this.boss = new Boss(scene, tex);
+    this.bosses = { gunship: new Gunship(scene, tex), dreadnought: new Dreadnought(scene) };
+    this.boss = this.bosses.gunship; // the boss of the current (or last) fight
     this.city = new City(scene);
     this.obstacles.city = this.city;
     this.volcano = new Volcano(scene, tex);
@@ -640,6 +659,7 @@ export class Game {
       tower: o._spawnStructure('tower'), fuel: o._spawnStructure('fuel'), hedgehog: o._spawnStructure('hedgehog'), building: o._spawnBuilding(),
       car: o._spawnCar(), lava: o._spawnLava(), meteor: o._spawnMeteor(), artillery: o._spawnArtillery(), pillar: o._spawnPillar(),
       boulder: o._spawnBoulder(12), jeep: o._spawnJeep(12),
+      shock: o.spawnShock(0, 10, 0), beam: o.spawnBeam(0, 1.95, 0), ram: o.spawnRam(0, 10, 0),
     };
     const unwarmed = Object.keys(o.pools).filter((k) => !T[k]);
     if (unwarmed.length) console.warn('prewarm: no sample for', unwarmed.join(', '), '(its shaders will compile mid-run)');
@@ -661,8 +681,9 @@ export class Game {
     tank.flash.visible = true;
     this.crystals.add(1, 1);
     this.crystals.update(0, 0, this.boxes, 0);
-    this.boss.group.visible = true;
-    this.boss.group.position.set(6, 4, 0);
+    for (const b of Object.values(this.bosses)) { b.group.visible = true; b.group.position.set(6, 4, 0); }
+    const dn = this.bosses.dreadnought;
+    dn.beamCore.visible = dn.beamGlow.visible = dn.aimLine.visible = true;
     this.beam.mesh.visible = true;
     for (const b of this.sideBeams) b.mesh.visible = true;
     // empty particle systems and decals are skipped by the renderer, so give them something to draw
@@ -707,7 +728,7 @@ export class Game {
     o.active.length = 0; // the shell and missile registered themselves as active
     temp.forEach((t) => o._release(t));
     this.crystals.clear();
-    this.boss.reset();
+    for (const b of Object.values(this.bosses)) b.reset();
     this.city.reset();
     this.volcano.setActive(false);
     this.dragonLight.intensity = 0;
@@ -1240,6 +1261,7 @@ export class Game {
 
   /** The jaws met something: break it, bat it back, or clang off it. */
   _smashHit(o) {
+    if (o.smash === 'parry') return this._parry(o);
     if (o.smash === 'reflect') {
       this.obstacles.reflect(o, this.speed);
       this.smashHit = true;
@@ -1293,6 +1315,22 @@ export class Game {
     }
   }
 
+  /** The Dreadnought's ram met the jaws (or Kaiju Rage): it is knocked back and takes a hit point. */
+  _parry(o) {
+    o.dead = true;
+    this.smashHit = true;
+    this.hitStopT = CFG.hitStop * 1.8;
+    this.audio.clang();
+    this.audio.crunch(1.4);
+    this.rig.shake(0.5);
+    this.rig.punch(1);
+    this._haptic(30);
+    this._popup('PARRY!', o.x, 4.4, 'close');
+    this._setChain(this.chain + 2);
+    for (let i = 0; i < 18; i++) this.sparks.emit(o.x - 1, 0.8 + Math.random() * 2.4, (Math.random() - 0.5), -3 - Math.random() * 5, Math.random() * 5, (Math.random() - 0.5) * 4, 0.3, 0.25, 0.05, 1.8, 1.3, 0.7, 1, 1.2, 12, 1);
+    this._bossHit('parry');
+  }
+
   /** Chunks flying off a broken obstacle, in its own colours. */
   _debris(o) {
     const DEB = {
@@ -1323,7 +1361,7 @@ export class Game {
       if (o.tall && o.x < 30) this._tip('tall', touch ? 'Too tall to jump! Tap the claw to SMASH it.' : 'Too tall to jump! SMASH it (→) or burn it (F).');
       else if (typeof o.smash === 'number' && o.smash > 0 && !o.tall && o.x < 24 && !this.smashes) {
         this._tip('smash', touch ? 'Tap the claw to SMASH it!' : 'Press → or D to SMASH it!');
-      } else if (o.type === 'missile' && this.boss.active) this._tip('reflect', 'Smash a missile just before it hits to bat it back at the gunship!');
+      } else if (o.type === 'missile' && this.boss.active) this._tip('reflect', `Smash a missile just before it hits to bat it back at the ${this.boss.noun}!`);
     }
   }
 
@@ -1412,7 +1450,7 @@ export class Game {
   _passObstacle(o, clearance) {
     let c = this.chain + 1;
     // dodging the gunship's fire charges the breath (capped just short of full, so the ready cue still plays)
-    if (this.boss.active && (o.type === 'missile' || o.mine || (o.type === 'shell' && o.vm))) {
+    if (this.boss.active && (o.type === 'missile' || o.type === 'shock' || o.mine || (o.type === 'shell' && o.vm))) {
       const k = o.type === 'shell' ? CFG.dodgeCharge / 3 : CFG.dodgeCharge;
       this.charge = Math.max(this.charge, Math.min(0.999, this.charge + k));
     }
@@ -1705,7 +1743,8 @@ export class Game {
       this.obstacles.spawning = false;
       this.obstacles.pendingShooter = false;
       this.bossPending = true;
-      this.hud.banner('WARNING', st.title, 'warn');
+      const next = this._nextBoss();
+      this.hud.banner('WARNING', next.id === 'gunship' ? st.title : `${next.noun.toUpperCase()} INCOMING`, 'warn');
       this.audio.alarm();
       return;
     }
@@ -1716,27 +1755,38 @@ export class Game {
     else this.hud.banner(banner.sub, banner.title);
   }
 
+  /** The boss of the next fight: the level's bosses take turns (most levels have only the gunship). */
+  _nextBoss() {
+    const ids = this.level.bosses || ['gunship'];
+    return this.bosses[ids[this.bossesSeen % ids.length]];
+  }
+
   _bossHome() {
     return this.renderer.aspect < 1 ? this._homes.tall : this._homes.wide;
   }
 
   _updateBoss(dt) {
-    const boss = this.boss;
     if (this.bossPending && this.state === 'running') {
       // wait for the last stragglers to pass, then the gunship swoops in
       if (!this.obstacles.active.some((o) => !o.projectile && o.x > -3)) {
         this.bossPending = false;
         // each gunship downed makes the next one tougher; harder levels add one more hit point
-        boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome(), mulberry32(hash32(this.seed, 1000 + this.bossesSeen)), this.level.bossMove);
+        this.boss = this._nextBoss();
+        this.boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome(), mulberry32(hash32(this.seed, 1000 + this.bossesSeen)), { move: this.level.bossMove });
         this.bossesSeen++;
+        if (this.boss.id === 'dreadnought') this._tip('dreadnought', this.coarseMQ.matches
+          ? 'The Dreadnought! Jump its shockwaves, duck its laser, and tap the claw as it rams you to PARRY.'
+          : 'The Dreadnought! Jump its shockwaves, duck its laser, and SMASH (→) as it rams you to PARRY.');
       }
     }
     const ctx = this._bossCtx;
+    ctx.speed = this.speed;
     ctx.home = this._bossHome();
     ctx.yaw = 0.85 * this.rig.blend;
-    boss.update(dt, this.time, ctx);
-    if (boss.active && boss.state === 'fight') this.hud.setBoss(`${['GUNSHIP', 'CITY GUNSHIP', 'INFERNO GUNSHIP'][this.level.id - 1]} MK-${this.bossesDowned + 1}`, boss.hp, boss.maxHp);
-    else if (boss.state !== 'dying') this.hud.setBoss('', -1, 0);
+    this.boss.update(dt, this.time, ctx);
+    const b = this.boss;
+    if (b.active && b.state === 'fight') this.hud.setBoss(b.title(this.level.id, this.bossesDowned + 1), b.hp, b.maxHp);
+    else if (b.state !== 'dying') this.hud.setBoss('', -1, 0);
   }
 
   /** source: 'breath' or 'reflect' (its own missile, batted back); n: hit points it takes off. */
@@ -1755,7 +1805,7 @@ export class Game {
       return;
     }
     if (!dead) {
-      this.hud.toast(source === 'reflect' ? `Its own missile! · ${boss.hp} to go` : `Direct hit · ${boss.hp} to go`, 1100);
+      this.hud.toast(source === 'reflect' ? `Its own missile! · ${boss.hp} to go` : source === 'parry' ? `Parried! · ${boss.hp} to go` : `Direct hit · ${boss.hp} to go`, 1100);
       return;
     }
     this.bossesDowned++;
@@ -1764,10 +1814,10 @@ export class Game {
     this.score += pts;
     this._popup(`+${pts}`, boss.x, boss.y + 1.6, 'big');
     this.hud.setBoss('', 0, boss.maxHp);
-    this.hud.banner('STAGE CLEAR', 'GUNSHIP DOWN', 'clear');
+    this.hud.banner('STAGE CLEAR', `${boss.noun.toUpperCase()} DOWN`, 'clear');
     this.audio.music?.stinger('clear');
     this.nextBossScore = Math.ceil((this.score + CFG.bossEvery) / 100) * 100;
-    this.toastAfter = { t: 2.6, text: `Next gunship at ${this.nextBossScore.toLocaleString('en-US')} points` };
+    this.toastAfter = { t: 2.6, text: `Next boss at ${this.nextBossScore.toLocaleString('en-US')} points` };
     this.slowT = 1.1;
     this.flash = 0.35;
     this.flashColor.setRGB(1, 0.75, 0.35);
@@ -1779,7 +1829,7 @@ export class Game {
     const boss = this.boss;
     for (const o of this.obstacles.active) {
       if (!o.reflected || o.dead) continue;
-      if (boss.state === 'fight' && o.x >= boss.x - 2.5) {
+      if (boss.state === 'fight' && o.x >= boss.front()) {
         o.dead = true;
         this._bossHit('reflect');
         continue;
@@ -1883,7 +1933,7 @@ export class Game {
         this._refreshShop();
         this.overT = 0;
         const stats = `${this.level.short} · ${this.smashes} smashed · ${this.crystalsRun} crystals · best ×${this.bestMult}`
-          + (this.bossesDowned ? ` · ${this.bossesDowned} gunship${this.bossesDowned > 1 ? 's' : ''} down` : '')
+          + (this.bossesDowned ? ` · ${this.bossesDowned} boss${this.bossesDowned > 1 ? 'es' : ''} down` : '')
           + ` · stage ${this.stages.number}`
           + (this.seedFixed || this.debug || this.sim ? ` · seed ${this.seed}` : '');
         this.hud.gameOver(Math.floor(this.score), this.hi, this.isBest, stats);
@@ -1951,7 +2001,7 @@ export class Game {
         this.charge = Math.min(1, this.charge + (this.pace * dt * CFG.scoreRate * boost) / CFG.breathFill);
         if (this.charge >= 1) {
           this.audio.charged();
-          if (!this.toldReady) this.hud.toast(this.boss.active ? 'Breath ready — fire at the gunship! (F)' : `${this._attackLabel()} ready — press F`);
+          if (!this.toldReady) this.hud.toast(this.boss.active ? `Breath ready — fire at the ${this.boss.noun}! (F)` : `${this._attackLabel()} ready — press F`);
           this.toldReady = true;
         }
       }
@@ -2202,7 +2252,8 @@ export class Game {
       } else this.smashCool = Math.max(0, this.smashCool - dt);
       const hit = this.debug ? null : this.obstacles.collide(this.boxes, n);
       if (hit) {
-        if (this.rageT > 0 && hit.smash === 'reflect') {
+        if (hit.smash === 'parry' && (this.rageT > 0 || this.graceT > 0)) this._parry(hit); // Rage shrugs a ram off
+        else if (this.rageT > 0 && hit.smash === 'reflect') {
           // in Kaiju Rage, shells and missiles that touch you are batted straight back
           this.obstacles.reflect(hit, this.speed);
           this.audio.reflect();
@@ -2222,14 +2273,16 @@ export class Game {
     this.crystals.update(dt, this.speed, this.boxes, this.state === 'running' ? n : 0, this._crystalOpts);
 
     // projectile trails and incoming-fire warnings
-    let rotor = this.boss.active || this.boss.state === 'dying' ? 1 : 0;
-    let treads = 0;
+    const bossOn = this.boss.active || this.boss.state === 'dying' ? 1 : 0;
+    let rotor = this.boss.sound === 'rotor' ? bossOn : 0;
+    let treads = this.boss.sound === 'treads' ? bossOn : 0;
     for (const o of this.obstacles.active) {
       if (o.type === 'shell' || o.type === 'missile') {
         this.sparks.emit(o.x + 0.4, o.y, 0, 2 + Math.random() * 2, (Math.random() - 0.5), (Math.random() - 0.5), 0.12, 0.25, 0.05, 1.6, 0.8, 0.3, 0.9, 1, 0, 0);
         if (o.type === 'missile') this.dust.emit(o.x + 0.5, o.y, 0, 1, 0.3, 0, 0.6, 0.25, 0.9, 0.55, 0.55, 0.55, 0.35, 1.5, 0.2, 1);
       } else if (o.type === 'heli' && o.x > -10 && o.x < 50) rotor = Math.max(rotor, 0.55);
       else if (o.type === 'tank' && !o.dead && o.x > -8 && o.x < 34) treads = Math.max(treads, 1 - Math.abs(o.x - 4) / 30);
+      else if (o.type === 'shock' && Math.random() < 0.7) this.dust.emit(o.x + 0.3, 0.3, (Math.random() - 0.5) * 3, 2 + Math.random() * 2, 1.5 + Math.random() * 2, (Math.random() - 0.5), 0.6, 0.5, 1.6, 0.42, 0.38, 0.34, 0.6, 1.4, -0.3, 1);
       else if (o.type === 'ptero' && !o.cried && o.x < 40 && running) { o.cried = true; this.audio.screech(o.x); }
       else if (o.type === 'artillery' && o.fallT >= 0 && !o.landed) {
         if (!o.cried && running) { o.cried = true; this.audio.meteorWhistle(o.x, 1); } // an incoming shell
@@ -2251,7 +2304,7 @@ export class Game {
           const e = this._warnList[warns.length];
           e.x = Math.min(window.innerWidth - 30, Math.max(30, p.x));
           e.y = Math.min(window.innerHeight - 70, Math.max(60, p.y));
-          e.kind = w.y < 1.5 ? 'low' : 'mid';
+          e.kind = w.kind === 'smash' ? 'smash' : w.y < 1.5 ? 'low' : 'mid';
           warns.push(e);
         }
       }

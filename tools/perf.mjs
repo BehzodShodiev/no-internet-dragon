@@ -18,6 +18,8 @@ const SCENES = {
   'city-siege-3d': { level: 1, view: '3d', quality: 'high', after: 'g.dist = 361;' },
   'volcano-boss-3d': { level: 2, view: '3d', quality: 'high', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }' },
   'desert-night-2d': { level: 0, view: '2d', quality: 'high', day: 0.66 },
+  // Night City's first boss is the Dreadnought (laser, shockwaves, ram)
+  'city-boss-3d': { level: 1, view: '3d', quality: 'high', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { g.charge = 1; g._breath(); }' },
   // Very High: 1.5x supersampled, 4096 shadows and the detailed models (manual only, so no frame budget)
   'desert-noon-3d-vh': { level: 0, view: '3d', quality: 'veryhigh', day: 0.25, budgetless: true },
   'volcano-boss-3d-vh': { level: 2, view: '3d', quality: 'veryhigh', after: 'g.nextBossScore = 0;', every: 'if (g.boss.state === "fight") { if (g.rageT <= 0 && g.rage < 1) g._startRage(); g.charge = 1; g._breath(); }', budgetless: true },

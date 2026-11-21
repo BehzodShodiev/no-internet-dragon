@@ -1,12 +1,11 @@
-// The gunship boss: flies in, hovers ahead of the dragon and fires telegraphed missile volleys.
-// Only the breath attack can bring it down.
+// The gunship boss: flies in, hovers ahead of the monster and fires telegraphed missile volleys.
+// Breath and batted-back missiles bring it down. The shared boss machinery is in BossBase.js.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { sweep, mergeLoose, setVertexColor } from '../gfx/geometry.js';
+import { BossBase, WARN_TIME, MISSILE_LOW, MISSILE_MID } from './BossBase.js';
 
-export const MISSILE_LOW = 0.95; // jump these
-export const MISSILE_MID = 1.95; // duck these
-export const WARN_TIME = 0.9; // seconds of warning before each launch
+export { WARN_TIME, MISSILE_LOW, MISSILE_MID };
 
 const V = (x, y, z = 0) => new THREE.Vector3(x, y, z);
 const part = (g, color, x = 0, y = 0, z = 0) => setVertexColor(g.translate(x, y, z), color);
@@ -21,9 +20,14 @@ const VOLLEYS = [['L'], ['M'], ['L', 'M'], ['M', 'L'], ['L', 'L'], ['M', 'L', 'M
 export const STRAFE = { rounds: 4, gap: 0.14 };
 const MINE_GAP = 0.95; // between two mines: a full jump and a landing fit between their craters
 const MINE_CLEAR = 2.1; // after the last mine drops, nothing else is aimed until its crater has passed
+const NAMES = { 1: 'GUNSHIP', 2: 'CITY GUNSHIP', 3: 'INFERNO GUNSHIP' };
 
-export class Boss {
+export class Gunship extends BossBase {
   constructor(scene, tex) {
+    super();
+    this.id = 'gunship';
+    this.noun = 'gunship';
+    this.sound = 'rotor';
     this.mat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.42, metalness: 0.55,
       normalMap: tex.rock.normalMap, normalScale: new THREE.Vector2(0.15, 0.15),
@@ -35,14 +39,6 @@ export class Boss {
     this.group.scale.setScalar(1.2);
     this.group.visible = false;
     scene.add(this.group);
-    this.state = 'idle'; // idle | enter | fight | dying
-    this.x = 40;
-    this.y = 12;
-    this.hp = this.maxHp = 0;
-    this.queue = [];
-    this.warnings = [];
-    this.t = 0;
-    this.flinch = 0;
   }
 
   _build() {
@@ -99,131 +95,81 @@ export class Boss {
     return root;
   }
 
-  get active() {
-    return this.state === 'enter' || this.state === 'fight';
-  }
-
   /** World-space box the breath has to reach. */
   box(out) {
     out[0] = this.x - 2.6; out[1] = this.y - 0.9; out[2] = this.x + 2.6; out[3] = this.y + 0.9;
     return out;
   }
 
-  /** 1 until it is down to half its hit points, then 2 (its level's move joins the volleys). */
-  get phase() {
-    return this.hp <= this.maxHp / 2 ? 2 : 1;
+  title(levelId, n) {
+    return `${NAMES[levelId] || 'GUNSHIP'} MK-${n}`;
   }
 
-  /**
-   * rand: this fight's seeded random stream (volley choice), so a seed replays the same fight.
-   * move: its phase-2 move ('volleys' | 'strafe' | 'mines').
-   */
-  start(cycle, home, rand = Math.random, move = 'volleys') {
-    this.rand = rand;
-    this.cycle = cycle;
-    this.move = move;
-    this.hold = 0; // the next attack waits at least this long (a mine's crater still to pass)
-    this.phaseUp = false; // set once when phase 2 begins (the game announces it)
+  /** opts.move: its phase-2 move ('volleys' | 'strafe' | 'mines'). */
+  _start(cycle, home, opts) {
+    this.move = opts.move || 'volleys';
     this.lastMove = false;
-    this.state = 'enter';
-    this.t = 0;
     this.hp = this.maxHp = 4 + cycle;
-    this.queue.length = 0;
     this.cool = 0.8; // opens fire almost as soon as it's in position
-    this.flinch = 0;
-    this.home = home;
     this.x = home.x + 32;
     this.y = home.y + 9;
-    this.group.visible = true;
-    this.group.rotation.set(0, 0, 0);
   }
 
-  reset() {
-    this.state = 'idle';
-    this.queue.length = 0;
-    this.warnings.length = 0;
-    this.group.visible = false;
+  _enter(k, time, ctx) {
+    this._spin(ctx);
+    const e = ease(k);
+    this.x = this.home.x + 32 * (1 - e);
+    this.y = this.home.y + 9 * (1 - e);
+    this.group.rotation.z = 0.25 * (1 - e); // nose down while it closes in
   }
 
-  /** A breath hit taking n hit points. Returns true when it was the killing blow. */
-  hit(n = 1) {
-    if (this.state !== 'fight') return false;
-    const was = this.phase;
-    this.hp = Math.max(0, this.hp - n);
-    this.flinch = 1;
-    if (was === 1 && this.phase === 2 && this.hp > 0) this.phaseUp = true;
-    // A hit never cancels the volley being aimed (otherwise fast breaths keep it from ever firing);
-    // instead it retaliates sooner, though never before a mine's crater has passed.
-    this.cool = Math.max(Math.min(this.cool, 0.6), this.hold);
-    if (this.hp > 0) return false;
-    this.state = 'dying';
-    this.t = 0;
-    this.vy = 1.5;
-    return true;
+  _fightPose(dt, time, ctx) {
+    this._spin(ctx);
+    this.x = this.home.x + Math.sin(time * 0.6) * 0.6 + this.flinch * 1.2;
+    this.y = this.home.y + Math.sin(time * 1.3) * 0.25 + this.flinch * 0.5;
+    this.group.rotation.z = Math.sin(time * 0.9) * 0.04 - this.flinch * 0.25;
   }
 
-  /**
-   * ctx: { home: {x, y}, yaw, fire(y, x0, y0), shoot(y, x0, y0), drop(x0, y0), smoke(x, y), blast(x, y, size), onGone() }
-   * fire: a missile; shoot: one chin-gun round; drop: a mine onto the track.
-   * yaw turns it partly side-on, so the chase camera sees its profile rather than its nose.
-   */
-  update(dt, time, ctx) {
-    if (this.state === 'idle') return;
-    this.t += dt;
-    this.home = ctx.home;
-    if (this.state !== 'dying') this.group.rotation.y = ctx.yaw;
+  /** yaw turns it partly side-on, so the chase camera sees its profile rather than its nose. */
+  _spin(ctx) {
+    this.group.rotation.y = ctx.yaw;
+  }
+
+  _afterUpdate(dt, time) {
     for (const r of this.rotors) r.rotation.y += dt * 26;
-    this.flinch = Math.max(0, this.flinch - dt * 2.5);
-    this.warnings.length = 0;
-    const g = this.group;
-
-    if (this.state === 'enter') {
-      const k = ease(this.t / 2.6);
-      this.x = this.home.x + 32 * (1 - k);
-      this.y = this.home.y + 9 * (1 - k);
-      g.rotation.z = 0.25 * (1 - k); // nose down while it closes in
-      if (this.t >= 2.6) { this.state = 'fight'; this.t = 0; }
-    } else if (this.state === 'fight') {
-      this.x = this.home.x + Math.sin(time * 0.6) * 0.6 + this.flinch * 1.2;
-      this.y = this.home.y + Math.sin(time * 1.3) * 0.25 + this.flinch * 0.5;
-      g.rotation.z = Math.sin(time * 0.9) * 0.04 - this.flinch * 0.25;
-      this.cool -= dt;
-      this.hold = Math.max(0, this.hold - dt);
-      if (this.cool <= 0 && !this.queue.length) this._volley();
-      for (let i = this.queue.length - 1; i >= 0; i--) {
-        const s = this.queue[i];
-        s.t -= dt;
-        if (s.t <= WARN_TIME && !s.quiet) this.warnings.push({ x: this.x - 2, y: s.y, t: s.t, kind: s.kind });
-        if (s.t <= 0) {
-          if (s.kind === 'mine') { ctx.drop(this.x - 0.6, this.y - 0.7); this.hold = MINE_CLEAR; }
-          else if (s.kind === 'strafe') ctx.shoot(s.y, this.x - 2.6, this.y - 0.65);
-          else ctx.fire(s.y, this.x - 0.5, this.y - 0.5);
-          this.queue.splice(i, 1);
-        }
-      }
-    } else if (this.state === 'dying') {
-      // spin out, trailing smoke, and crash
-      this.vy -= 9 * dt;
-      this.y = Math.max(0.6, this.y + this.vy * dt);
-      this.x += dt * 2.5;
-      g.rotation.y += dt * (2 + this.t * 3);
-      g.rotation.z = -0.3 - this.t * 0.2;
-      if (Math.random() < dt * 14) ctx.smoke(this.x + (Math.random() - 0.5) * 3, this.y + Math.random());
-      if (Math.random() < dt * 4) ctx.blast(this.x + (Math.random() - 0.5) * 3, this.y, 0.5);
-      if (this.t > 2.3 || this.y <= 0.6) {
-        ctx.blast(this.x, this.y, 1.6);
-        this.reset();
-        ctx.onGone();
-        return;
-      }
-    }
     // pods glow while a volley is being aimed
     const aiming = this.queue.length ? 1 : 0;
     this.glowMat.emissiveIntensity = 1.5 + aiming * (5 + 3 * Math.sin(time * 30));
-    g.position.set(this.x, this.y, 0);
   }
 
-  _volley() {
+  _fire(s, ctx) {
+    if (s.kind === 'mine') { ctx.drop(this.x - 0.6, this.y - 0.7); this.hold = MINE_CLEAR; }
+    else if (s.kind === 'strafe') ctx.shoot(s.y, this.x - 2.6, this.y - 0.65);
+    else ctx.fire(s.y, this.x - 0.5, this.y - 0.5);
+  }
+
+  _die() {
+    this.vy = 1.5;
+  }
+
+  _dying(dt, ctx) {
+    // spin out, trailing smoke, and crash
+    const g = this.group;
+    this.vy -= 9 * dt;
+    this.y = Math.max(0.6, this.y + this.vy * dt);
+    this.x += dt * 2.5;
+    g.rotation.y += dt * (2 + this.t * 3);
+    g.rotation.z = -0.3 - this.t * 0.2;
+    if (Math.random() < dt * 14) ctx.smoke(this.x + (Math.random() - 0.5) * 3, this.y + Math.random());
+    if (Math.random() < dt * 4) ctx.blast(this.x + (Math.random() - 0.5) * 3, this.y, 0.5);
+    if (this.t > 2.3 || this.y <= 0.6) {
+      ctx.blast(this.x, this.y, 1.6);
+      return true;
+    }
+    return false;
+  }
+
+  _attack() {
     const rand = this.rand || Math.random;
     const rest = Math.max(0.9, 1.5 - 0.15 * this.cycle);
     const p2 = this.phase === 2;

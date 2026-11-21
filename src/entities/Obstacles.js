@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { sweep, blob, mergeLoose, setVertexColor } from '../gfx/geometry.js';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mulberry32, createNoise, hash32 } from '../gfx/noise.js';
+import { makeShock } from './Dreadnought.js';
 import { Military } from './Military.js';
 import { bakeAOLater as bakeAO } from '../gfx/ao.js';
 import { Director, GAP, BREATHER_GAP } from '../game/Patterns.js';
@@ -228,11 +229,12 @@ export const isFlyer = (type) => FLYERS.includes(type);
 export const SMASH = {
   cactusS: 10, cactusL: 10, ptero: 20, heli: 25, tank: 30, car: 20, tower: 40, fuel: 50, building: 50, pillar: 40, boulder: 15, jeep: 25,
   rock: 0, hedgehog: 0, lava: 0, meteor: 0, artillery: 0, shell: 'reflect', missile: 'reflect',
+  shock: 0, beam: 0, ram: 'parry', // the Dreadnought's attacks: a ram is smashed to parry it
 };
 // Too tall to jump: smash it or burn it.
-export const TALL = { tower: true, fuel: true, building: true, pillar: true };
+export const TALL = { tower: true, fuel: true, building: true, pillar: true, ram: true };
 // Can't be smashed, but nothing to clang off either: the smash just passes over.
-export const SILENT = { lava: true, meteor: true, artillery: true };
+export const SILENT = { lava: true, meteor: true, artillery: true, shock: true, beam: true };
 // How each type must be answered. 'height': by the height it flies at (see respond()). The spawner,
 // the tips and the autopilot all read this, so a new type can't be added without saying how to beat it.
 export const RESPONSE = {
@@ -240,6 +242,7 @@ export const RESPONSE = {
   boulder: 'jump', jeep: 'jump', // chargers: they come at you faster than the ground scrolls
   tower: 'smash', fuel: 'smash', building: 'smash', pillar: 'smash',
   ptero: 'height', heli: 'height', shell: 'height', missile: 'height',
+  shock: 'jump', beam: 'height', ram: 'smash', // boss attacks: a shockwave on the ground, a laser at head height, a ram
 };
 /** 'jump' | 'duck' | 'under' | 'smash' for one obstacle: low flyers are jumped, mid ones ducked, high ones run under. */
 export function respond(o) {
@@ -302,6 +305,7 @@ export class Obstacles {
     this.pools = {
       cactusS: [], cactusL: [], rock: [], ptero: [], tank: [], heli: [], shell: [], missile: [],
       tower: [], fuel: [], hedgehog: [], building: [], car: [], lava: [], meteor: [], artillery: [], pillar: [], boulder: [], jeep: [],
+      shock: [], beam: [], ram: [],
     };
     this.city = null; // set by the game: builds the city's buildings and cars
     this.volcano = null; // set by the game: builds lava pools, meteors and basalt pillars
@@ -837,6 +841,58 @@ export class Obstacles {
     o.fromY = fromY;
     o.fallT = 0;
     o.group.position.set(o.x, 0, 0);
+    this.active.push(o);
+    return o;
+  }
+
+  /** The Dreadnought's shockwave: rolls along the road at you, closing at vm units/s (jump it). */
+  spawnShock(x, vm, speed) {
+    const o = this._acquire('shock');
+    this._model(o, () => makeShock());
+    o.projectile = true;
+    o.x = x;
+    o.y = 0;
+    o.ty = 0;
+    o.vm = vm;
+    o.vx = vm - speed;
+    o.width = 1.2;
+    o.boxes.length = 0;
+    o.boxes.push([-0.6, 0, 0.6, 0.6]);
+    o.group.position.set(o.x, 0, 0);
+    this.active.push(o);
+    return o;
+  }
+
+  /**
+   * The Dreadnought's laser at height y (duck it): a hitbox only (the boss draws the beam). It starts at
+   * the nose (x) and the boss stretches it toward the monster each frame: o.x is its tip, boxes[0][2] its length.
+   */
+  spawnBeam(x, y, speed) {
+    const o = this._acquire('beam');
+    o.projectile = true;
+    o.x = x;
+    o.y = 0;
+    o.ty = y;
+    o.vx = -speed; // holds still relative to the monster
+    o.width = 1;
+    o.boxes.length = 0;
+    o.boxes.push([0, y - 0.15, 0, y + 0.15]);
+    this.active.push(o);
+    return o;
+  }
+
+  /** The Dreadnought's ram: its blade, closing at vm units/s (the boss rides along). Smash it to parry. */
+  spawnRam(x, vm, speed) {
+    const o = this._acquire('ram');
+    o.projectile = true;
+    o.x = x;
+    o.y = 0;
+    o.vm = vm;
+    o.ty = 0;
+    o.vx = vm - speed;
+    o.width = 2;
+    o.boxes.length = 0;
+    o.boxes.push([-1, 0, 1, 3.6]);
     this.active.push(o);
     return o;
   }

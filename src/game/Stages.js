@@ -20,6 +20,7 @@ const STAGE = {
  * breath: how fast the breath charges; bossCharge: its extra boost during the gunship fight;
  * rageCrystals: crystals to fill Kaiju Rage. Harder levels make you earn both.
  * bossMove: the gunship's phase-2 move at half health ('volleys' | 'strafe' | 'mines', see Boss.js).
+ * bosses: the bosses that take turns at the boss stage (default: the gunship).
  */
 export const LEVELS = [
   {
@@ -30,7 +31,7 @@ export const LEVELS = [
   },
   {
     id: 2, name: 'NIGHT CITY', short: 'City', stars: 2, field: 'l2', biome: 'city', pace: 1.12, tight: 1, time: 0.575,
-    breath: 0.85, bossCharge: 0.65, rageCrystals: 55, bossMove: 'strafe',
+    breath: 0.85, bossCharge: 0.65, rageCrystals: 55, bossMove: 'strafe', bosses: ['dreadnought', 'gunship'],
     stages: [STAGE.city, STAGE.siege, STAGE.cityBoss],
     blurb: 'Traffic, buildings to flatten and the army in the streets, under the street lights.',
   },

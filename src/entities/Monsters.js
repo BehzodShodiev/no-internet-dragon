@@ -25,7 +25,7 @@ export const MONSTERS = [
     id: 'ghidorah', name: 'Jade Hydra', variant: 'ghidorah', sound: { roar: 'triple', breath: 'gravity' },
     attackName: 'TRIPLE FIRE', trait: 'flap',
     note: 'Three horned heads, jade wings, green fire from every mouth (it hits a gunship twice as hard). WING FLAP: jump again in mid-air.',
-    goal: { stat: 'gunships', need: 5, text: 'Down 5 gunships in total' },
+    goal: { stat: 'gunships', need: 5, text: 'Down 5 bosses in total' },
     look: {
       id: 'ghidorah', name: 'Jade Hydra', note: 'Jade',
       skin: [1, 1, 1], plate: [1, 1, 1], glow: 0x6dff8a, eye: 0xffc21a, crack: 0x000000, metal: 0.12, rough: 0.5,
@@ -49,7 +49,7 @@ export const MONSTERS = [
     id: 'stormwing', name: 'Storm Wing', model: 'stormwing', voice: 1.5, sound: { roar: 'trill', breath: 'gravity' },
     attackName: 'THUNDER BEAM', trait: 'dive',
     note: 'A giant storm pterosaur whose wing veins glow like lightning. SONIC DIVE: hold duck in mid-air to plunge; the boom on landing shatters what is just ahead.',
-    goal: { stat: 'gunships', need: 1, text: 'Down your first gunship' },
+    goal: { stat: 'gunships', need: 1, text: 'Down your first boss' },
     look: {
       id: 'stormwing', name: 'Storm Wing', note: 'Storm blue',
       // skin: hide tint; plate: wing tint; glow: the wing veins
