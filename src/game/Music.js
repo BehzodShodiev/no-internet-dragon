@@ -50,6 +50,7 @@ export class Music {
     this.vib.connect(this.vibDepth);
     this.vib.start();
     this.timer = null;
+    this.tempo = 1; // multiplies the theme's bpm (a gunship's phase 2 speeds it up)
   }
 
   /** Starts the sequencer (after the audio context exists and is running). */
@@ -88,7 +89,7 @@ export class Music {
     if (this.nextT < ctx.currentTime - 0.2) this.nextT = ctx.currentTime + 0.05;
     while (this.nextT < ctx.currentTime + 0.15) {
       this._playStep(this.nextT);
-      this.nextT += 60 / this.theme.bpm / 4;
+      this.nextT += 60 / (this.theme.bpm * this.tempo) / 4;
     }
   }
 
@@ -118,7 +119,7 @@ export class Music {
     }
     const th = this.theme;
     const lv = this.level;
-    const spb = 60 / th.bpm / 4; // seconds per step
+    const spb = 60 / (th.bpm * this.tempo) / 4; // seconds per step
     const chord = this._chord(this.chordDeg, 0);
     const live = (name) => name === 'pad' || lv > LAYER_AT[name] - 1 + 0.02;
 

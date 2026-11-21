@@ -15,6 +15,12 @@ const cylX = (r, len, seg = 14) => new THREE.CylinderGeometry(r, r, len, seg).ro
 const ease = (t) => 1 - Math.pow(1 - Math.min(1, Math.max(0, t)), 3);
 // L = low (jump), M = head height (duck). Later cycles unlock the longer volleys.
 const VOLLEYS = [['L'], ['M'], ['L', 'M'], ['M', 'L'], ['L', 'L'], ['M', 'L', 'M'], ['L', 'M', 'L']];
+// Phase 2 (at half health), one move per level (LEVELS bossMove):
+//   'volleys' the long mixed volleys from the first gunship on, 'strafe' a chin-gun burst at head height
+//   (one duck held through STRAFE rounds), 'mines' bombs dropped onto the track ahead (jump the craters).
+export const STRAFE = { rounds: 4, gap: 0.14 };
+const MINE_GAP = 0.95; // between two mines: a full jump and a landing fit between their craters
+const MINE_CLEAR = 2.1; // after the last mine drops, nothing else is aimed until its crater has passed
 
 export class Boss {
   constructor(scene, tex) {
@@ -103,10 +109,22 @@ export class Boss {
     return out;
   }
 
-  /** rand: this fight's seeded random stream (volley choice), so a seed replays the same fight. */
-  start(cycle, home, rand = Math.random) {
+  /** 1 until it is down to half its hit points, then 2 (its level's move joins the volleys). */
+  get phase() {
+    return this.hp <= this.maxHp / 2 ? 2 : 1;
+  }
+
+  /**
+   * rand: this fight's seeded random stream (volley choice), so a seed replays the same fight.
+   * move: its phase-2 move ('volleys' | 'strafe' | 'mines').
+   */
+  start(cycle, home, rand = Math.random, move = 'volleys') {
     this.rand = rand;
     this.cycle = cycle;
+    this.move = move;
+    this.hold = 0; // the next attack waits at least this long (a mine's crater still to pass)
+    this.phaseUp = false; // set once when phase 2 begins (the game announces it)
+    this.lastMove = false;
     this.state = 'enter';
     this.t = 0;
     this.hp = this.maxHp = 4 + cycle;
@@ -130,11 +148,13 @@ export class Boss {
   /** A breath hit taking n hit points. Returns true when it was the killing blow. */
   hit(n = 1) {
     if (this.state !== 'fight') return false;
+    const was = this.phase;
     this.hp = Math.max(0, this.hp - n);
     this.flinch = 1;
+    if (was === 1 && this.phase === 2 && this.hp > 0) this.phaseUp = true;
     // A hit never cancels the volley being aimed (otherwise fast breaths keep it from ever firing);
-    // instead it retaliates sooner.
-    this.cool = Math.min(this.cool, 0.6);
+    // instead it retaliates sooner, though never before a mine's crater has passed.
+    this.cool = Math.max(Math.min(this.cool, 0.6), this.hold);
     if (this.hp > 0) return false;
     this.state = 'dying';
     this.t = 0;
@@ -143,7 +163,8 @@ export class Boss {
   }
 
   /**
-   * ctx: { home: {x, y}, yaw, fire(y, x0, y0), smoke(x, y), blast(x, y, size), onGone() }
+   * ctx: { home: {x, y}, yaw, fire(y, x0, y0), shoot(y, x0, y0), drop(x0, y0), smoke(x, y), blast(x, y, size), onGone() }
+   * fire: a missile; shoot: one chin-gun round; drop: a mine onto the track.
    * yaw turns it partly side-on, so the chase camera sees its profile rather than its nose.
    */
   update(dt, time, ctx) {
@@ -167,13 +188,16 @@ export class Boss {
       this.y = this.home.y + Math.sin(time * 1.3) * 0.25 + this.flinch * 0.5;
       g.rotation.z = Math.sin(time * 0.9) * 0.04 - this.flinch * 0.25;
       this.cool -= dt;
+      this.hold = Math.max(0, this.hold - dt);
       if (this.cool <= 0 && !this.queue.length) this._volley();
       for (let i = this.queue.length - 1; i >= 0; i--) {
         const s = this.queue[i];
         s.t -= dt;
-        if (s.t <= WARN_TIME) this.warnings.push({ x: this.x - 2, y: s.y, t: s.t });
+        if (s.t <= WARN_TIME && !s.quiet) this.warnings.push({ x: this.x - 2, y: s.y, t: s.t, kind: s.kind });
         if (s.t <= 0) {
-          ctx.fire(s.y, this.x - 0.5, this.y - 0.5);
+          if (s.kind === 'mine') { ctx.drop(this.x - 0.6, this.y - 0.7); this.hold = MINE_CLEAR; }
+          else if (s.kind === 'strafe') ctx.shoot(s.y, this.x - 2.6, this.y - 0.65);
+          else ctx.fire(s.y, this.x - 0.5, this.y - 0.5);
           this.queue.splice(i, 1);
         }
       }
@@ -200,10 +224,28 @@ export class Boss {
   }
 
   _volley() {
-    const pool = this.cycle === 0 ? 4 : VOLLEYS.length;
-    const v = VOLLEYS[Math.floor((this.rand || Math.random)() * pool)];
+    const rand = this.rand || Math.random;
+    const rest = Math.max(0.9, 1.5 - 0.15 * this.cycle);
+    const p2 = this.phase === 2;
+    // phase 2: its level's move every other attack (never twice running, never mixed with missiles)
+    if (p2 && this.move !== 'volleys' && !this.lastMove) {
+      this.lastMove = true;
+      if (this.move === 'strafe') {
+        // one warning, then a burst at head height: a single duck held through it
+        for (let i = 0; i < STRAFE.rounds; i++) this.queue.push({ t: WARN_TIME + i * STRAFE.gap, y: MISSILE_MID, kind: 'strafe', quiet: i > 0 });
+        this.cool = WARN_TIME + STRAFE.rounds * STRAFE.gap + rest;
+      } else {
+        const n = this.cycle >= 1 ? 2 : 1;
+        for (let i = 0; i < n; i++) this.queue.push({ t: WARN_TIME + i * MINE_GAP, y: 0.4, kind: 'mine' });
+        this.cool = WARN_TIME + (n - 1) * MINE_GAP + MINE_CLEAR;
+      }
+      return;
+    }
+    this.lastMove = false;
+    const pool = this.cycle === 0 && !p2 ? 4 : VOLLEYS.length; // phase 2 brings the long volleys early
+    const v = VOLLEYS[Math.floor(rand() * pool)];
     const gap = Math.max(0.78, 0.9 - 0.04 * this.cycle); // between launches; full jumps still fit between low missiles
-    v.forEach((k, i) => this.queue.push({ t: WARN_TIME + i * gap, y: k === 'L' ? MISSILE_LOW : MISSILE_MID }));
-    this.cool = WARN_TIME + v.length * gap + Math.max(0.9, 1.5 - 0.15 * this.cycle);
+    v.forEach((k, i) => this.queue.push({ t: WARN_TIME + i * gap, y: k === 'L' ? MISSILE_LOW : MISSILE_MID, kind: 'missile' }));
+    this.cool = WARN_TIME + v.length * gap + rest;
   }
 }

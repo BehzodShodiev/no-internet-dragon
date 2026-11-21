@@ -8,9 +8,9 @@
 (() => {
   const g = window.__game;
   const SMASHER = !!window.__smasher;
-  window.__bot = { jumps: 0, ducks: 0, deaths: 0, maxScore: 0, breaths: 0, smashes: 0, glides: 0, glideTime: 0, drops: 0, runs: 1, log: [] };
+  window.__bot = { jumps: 0, ducks: 0, deaths: 0, maxScore: 0, breaths: 0, smashes: 0, glides: 0, glideTime: 0, drops: 0, runs: 1, log: [], bossTimes: [] };
   const B = window.__bot;
-  let holding = false, ducking = false;
+  let holding = false, ducking = false, fightT = -1;
 
   function step(dt) {
     if (window.__botStop) return;
@@ -27,6 +27,9 @@
     }
     if (g.state !== 'running') return;
     B.maxScore = Math.max(B.maxScore, g.score | 0);
+    // boss fight lengths (game seconds from its first shot to its fall), for the fight-time targets
+    if (g.boss.state === 'fight' && fightT < 0) fightT = g.time;
+    else if (g.boss.state !== 'fight' && fightT >= 0) { if (g.boss.state === 'dying') B.bossTimes.push(+(g.time - fightT).toFixed(1)); fightT = -1; }
     if (g.boss.state === 'fight' && g.charge >= 1 && g.breathT <= 0) { g._breath(); B.breaths++; }
     // Kaiju Rage (on demand): the bot saves it for the gunship
     if (g.rageReady && g.boss.state === 'fight') { g._triggerRage(); B.rages = (B.rages || 0) + 1; }

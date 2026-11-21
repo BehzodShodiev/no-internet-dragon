@@ -454,6 +454,7 @@ export class Obstacles {
     o.vm = 0;
     o.resp = null; // answer override for this instance (see respond)
     o.jam = 0; // cars in a traffic jam
+    o.mine = false; // an artillery strike dropped by a gunship (spawnMine)
     o.smash = SMASH[type];
     o.tall = !!TALL[type];
     o.t = this.rand() * 10;
@@ -626,7 +627,8 @@ export class Obstacles {
     o.fallT += dt;
     const k = Math.min(1, o.fallT);
     ball.visible = true;
-    if (o.type === 'artillery') ball.position.set(1.5 * (1 - k), 20 * (1 - k) * (1 - k * 0.3), 0); // a shell from high up, nose first
+    if (o.mine) ball.position.set((o.fromX - o.x) * (1 - k), o.fromY * (1 - k * k), 0); // falls from the gunship
+    else if (o.type === 'artillery') ball.position.set(1.5 * (1 - k), 20 * (1 - k) * (1 - k * 0.3), 0); // a shell from high up, nose first
     else {
       ball.position.set(9 * (1 - k), 0.6 + 17 * (1 - k), 0);
       ball.rotation.x += dt * 6;
@@ -783,15 +785,19 @@ export class Obstacles {
     return o;
   }
 
-  /** A shell flying at height ty; from a gunner it starts at y0 (its nose) and drops to ty at once. */
-  spawnShell(x, ty, y0 = ty) {
+  /**
+   * A shell flying at height ty; from a gunner it starts at y0 (its nose) and drops to ty at once.
+   * vm: a gunship's chin-gun round instead, closing at vm units/s whatever the ground does (like a missile).
+   */
+  spawnShell(x, ty, y0 = ty, vm = 0, speed = 0) {
     const o = this._acquire('shell');
     this._model(o, () => this.mil.makeShell());
     o.projectile = true;
     o.x = x;
     o.y = y0;
     o.ty = ty;
-    o.vx = SHELL_SPEED;
+    o.vm = vm;
+    o.vx = vm ? vm - speed : SHELL_SPEED;
     o.width = 0.6;
     o.boxes.length = 0;
     o.boxes.push([-0.3, -0.12, 0.3, 0.12]);
@@ -814,6 +820,23 @@ export class Obstacles {
     o.boxes.length = 0;
     o.boxes.push([-0.45, -0.14, 0.45, 0.14]);
     o.group.position.set(o.x, o.y, 0);
+    this.active.push(o);
+    return o;
+  }
+
+  /**
+   * A gunship's mine: dropped from (fromX, fromY), it falls for a second (the meteor flow, with the
+   * artillery model) onto the track landX units ahead and leaves a crater to jump.
+   */
+  spawnMine(fromX, fromY, landX, speed) {
+    const o = this._spawnArtillery();
+    o.mine = true;
+    o.x = landX + speed; // where the ground will have carried it in the second it falls
+    o.y = 0;
+    o.fromX = fromX;
+    o.fromY = fromY;
+    o.fallT = 0;
+    o.group.position.set(o.x, 0, 0);
     this.active.push(o);
     return o;
   }

@@ -19,23 +19,24 @@ const STAGE = {
  * time: a fixed time of day (cycle 0..1), or null for the normal day/night cycle.
  * breath: how fast the breath charges; bossCharge: its extra boost during the gunship fight;
  * rageCrystals: crystals to fill Kaiju Rage. Harder levels make you earn both.
+ * bossMove: the gunship's phase-2 move at half health ('volleys' | 'strafe' | 'mines', see Boss.js).
  */
 export const LEVELS = [
   {
     id: 1, name: 'DESERT OUTPOST', short: 'Desert', stars: 1, field: 'best', biome: 'desert', pace: 1, tight: 0, time: null, startT: 0.035,
-    breath: 1, bossCharge: 0.75, rageCrystals: 40,
+    breath: 1, bossCharge: 0.75, rageCrystals: 40, bossMove: 'volleys',
     stages: [STAGE.desert, STAGE.army, STAGE.boss],
     blurb: 'Cacti, tanks, watchtowers and a gunship. The place to learn jump, duck and smash.',
   },
   {
     id: 2, name: 'NIGHT CITY', short: 'City', stars: 2, field: 'l2', biome: 'city', pace: 1.12, tight: 1, time: 0.575,
-    breath: 0.85, bossCharge: 0.65, rageCrystals: 55,
+    breath: 0.85, bossCharge: 0.65, rageCrystals: 55, bossMove: 'strafe',
     stages: [STAGE.city, STAGE.siege, STAGE.cityBoss],
     blurb: 'Traffic, buildings to flatten and the army in the streets, under the street lights.',
   },
   {
     id: 3, name: 'VOLCANO FORTRESS', short: 'Volcano', stars: 3, field: 'l3', biome: 'volcano', pace: 1.25, tight: 2, time: 0.53,
-    breath: 0.72, bossCharge: 0.6, rageCrystals: 70,
+    breath: 0.72, bossCharge: 0.6, rageCrystals: 70, bossMove: 'mines',
     stages: [STAGE.ashlands, STAGE.inferno, STAGE.volcanoBoss],
     blurb: 'Lava pools, falling meteors, basalt pillars and the Inferno Gunship. Fast.',
   },

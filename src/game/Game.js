@@ -37,6 +37,13 @@ import { TexCache } from '../gfx/TexCache.js';
 import { mulberry32, hash32 } from '../gfx/noise.js';
 
 export const STORM_TIME = 14; // seconds a sandstorm blows (see _sandstorm)
+// The gunship's phase 2 (at half health), by its level's move (LEVELS bossMove)
+const PHASE2 = {
+  volleys: { title: 'FULL BARRAGE', tip: 'Phase 2: longer volleys now. Every missile you dodge charges your breath.' },
+  strafe: { title: 'CHIN GUN', tip: 'Chin gun! One warning, then a burst at head height: hold duck through all of it.' },
+  mines: { title: 'MINES', tip: 'Mines! It drops them on the track ahead: jump the craters.' },
+};
+
 const CFG = {
   startSpeed: 11,
   maxSpeed: 24,
@@ -49,6 +56,7 @@ const CFG = {
   scoreRate: 0.75,
   dayLength: 1500, // distance points per full day/night cycle
   breathFill: 70, // distance points to fully charge the breath
+  dodgeCharge: 0.08, // breath for each gunship missile or mine dodged (a chin-gun round gives a third of it)
   breathStart: 0.6, // every run starts mostly charged, so the first breath comes within seconds
   breathTime: 1.3,
   breathRange: 34,
@@ -190,6 +198,13 @@ export class Game {
         this.audio.missileLaunch(x0);
         for (let i = 0; i < 8; i++) this.dust.emit(x0, y0, 0, Math.random() * 2, -1 + Math.random() * 2, (Math.random() - 0.5) * 2, 0.7, 0.4, 2, 0.5, 0.5, 0.5, 0.5, 2, 0, 0);
       },
+      // phase 2: a chin-gun round (faster than a missile), or a mine onto the track well ahead
+      shoot: (y, x0, y0) => {
+        this.obstacles.spawnShell(x0, y, y0, CFG.missileSpeed + 6 + 1.5 * Math.min(this.bossesDowned + this.level.tight, 5), this.speed);
+        this.audio.missileLaunch(x0);
+        for (let i = 0; i < 4; i++) this.sparks.emit(x0, y0, 0, -4 - Math.random() * 3, (Math.random() - 0.5) * 2, (Math.random() - 0.5), 0.08, 0.3, 0.06, 2, 1.2, 0.4, 1, 1, 0, 0);
+      },
+      drop: (x0, y0) => this.obstacles.spawnMine(x0, y0, 14, this.speed),
       smoke: (x, y) => this.dust.emit(x, y, (Math.random() - 0.5), Math.random() * 2, 1 + Math.random() * 2, 0, 1.4, 1, 4, 0.12, 0.11, 0.1, 0.6, 1.5, -0.4, 0),
       blast: (x, y, size) => this._blast(x, y, size),
       onGone: () => this._afterBoss(),
@@ -1396,6 +1411,11 @@ export class Game {
 
   _passObstacle(o, clearance) {
     let c = this.chain + 1;
+    // dodging the gunship's fire charges the breath (capped just short of full, so the ready cue still plays)
+    if (this.boss.active && (o.type === 'missile' || o.mine || (o.type === 'shell' && o.vm))) {
+      const k = o.type === 'shell' ? CFG.dodgeCharge / 3 : CFG.dodgeCharge;
+      this.charge = Math.max(this.charge, Math.min(0.999, this.charge + k));
+    }
     // ducking under a mid flyer always clears it closely; only a last-moment duck earns the CLOSE!
     if (this.obstacles.respond(o) === 'duck' && !o.lateDuck) clearance = Infinity;
     if (clearance < CFG.closeCall) {
@@ -1538,6 +1558,7 @@ export class Game {
       if (st === 'intro') k = 1;
     }
     m.set(theme, k);
+    m.tempo = this.boss.active && this.boss.phase === 2 ? 1.18 : 1; // the drums speed up for phase 2
     m.update(realDt);
   }
 
@@ -1706,7 +1727,7 @@ export class Game {
       if (!this.obstacles.active.some((o) => !o.projectile && o.x > -3)) {
         this.bossPending = false;
         // each gunship downed makes the next one tougher; harder levels add one more hit point
-        boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome(), mulberry32(hash32(this.seed, 1000 + this.bossesSeen)));
+        boss.start(this.bossesDowned + (this.level.tight ? 1 : 0), this._bossHome(), mulberry32(hash32(this.seed, 1000 + this.bossesSeen)), this.level.bossMove);
         this.bossesSeen++;
       }
     }
@@ -1724,6 +1745,15 @@ export class Game {
     if (source === 'breath') this.bossHitThisBreath = true;
     const dead = boss.hit(n);
     this._blast(boss.x - 1, boss.y, 0.8);
+    if (!dead && boss.phaseUp) {
+      // half health: phase 2, with its level's move
+      boss.phaseUp = false;
+      const p = PHASE2[boss.move] || PHASE2.volleys;
+      this.hud.banner('PHASE 2', p.title, 'warn');
+      this.audio.alarm();
+      this._tip('phase2-' + boss.move, p.tip);
+      return;
+    }
     if (!dead) {
       this.hud.toast(source === 'reflect' ? `Its own missile! · ${boss.hp} to go` : `Direct hit · ${boss.hp} to go`, 1100);
       return;

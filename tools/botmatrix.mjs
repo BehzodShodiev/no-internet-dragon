@@ -59,7 +59,7 @@ async function runJob(s, j) {
       const B = await s.evaluate('JSON.stringify(window.__bot)');
       const b = JSON.parse(B);
       return { ...j, deaths: b.deaths, loops: st.loops, gameTime: Math.round(gameT), score: b.maxScore, stage: st.stage, gunships: st.gunships,
-        jumps: b.jumps, ducks: b.ducks, smashes: b.smashes, glides: b.glides, drops: b.drops, timedOut: st.loops < loops && st.deaths === 0, log: b.log };
+        jumps: b.jumps, ducks: b.ducks, smashes: b.smashes, bossTimes: b.bossTimes, glides: b.glides, drops: b.drops, timedOut: st.loops < loops && st.deaths === 0, log: b.log };
     }
   }
 }
@@ -89,5 +89,12 @@ await close();
 const failed = results.filter((r) => r.deaths || r.error);
 const report = path.join(os.tmpdir(), `botmatrix-${Date.now()}.json`);
 fs.writeFileSync(report, JSON.stringify({ levels, views, monsters, seeds, loops, sim, results }, null, 1));
+// boss fight lengths per level (game seconds, from the bot)
+const fights = {};
+for (const r of results) for (const t of r.bossTimes || []) (fights[r.level] ||= []).push(t);
+for (const [lv, ts] of Object.entries(fights)) {
+  ts.sort((a, b) => a - b);
+  console.log(`boss fights L${lv}: ${ts.length}, median ${ts[ts.length >> 1]}s, range ${ts[0]}-${ts[ts.length - 1]}s`);
+}
 console.log(`\n${results.length - failed.length}/${results.length} passed in ${Math.round((Date.now() - t0) / 1000)}s · report ${report}`);
 process.exit(failed.length ? 1 : 0);
