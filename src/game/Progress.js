@@ -19,6 +19,8 @@ export class Progress {
   /** Takes the larger of each stat and of the crystals spent, and the union of unlocks and purchases. */
   merge(data) {
     for (const s of STATS) this.stats[s] = Math.max(this.stats[s], Number(data?.stats?.[s]) || 0);
+    // stats this version doesn't know (from a newer one) are kept too, so they survive a round trip
+    for (const [s, v] of Object.entries(data?.stats || {})) if (!STATS.includes(s) && Number.isFinite(Number(v))) this.stats[s] = Math.max(this.stats[s] || 0, Number(v));
     for (const id of data?.unlocked || []) if (typeof id === 'string') this.unlocked.add(id);
     this.spent = Math.max(this.spent, Number(data?.spent) || 0);
     for (const id of data?.owned || []) if (typeof id === 'string') this.owned.add(id);

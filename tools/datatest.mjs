@@ -73,7 +73,7 @@ check('view-only viewer is told', ok5 === false && err5 === 'readonly', `saveErr
 
 // 6. old local saves keep working (pre-unlock progress, local bests, saved picks)
 await open({ mockro: '1' });
-await s.evaluate(`(() => { localStorage.setItem('dragon.progress', JSON.stringify({ stats: { crystals: 600, gunships: 5, runs: 9 }, unlocked: ['kaiju'] }));
+await s.evaluate(`(() => { localStorage.setItem('dragon.progress', JSON.stringify({ stats: { crystals: 600, gunships: 5, runs: 9, futureStat: 7 }, unlocked: ['kaiju', 'a:future-trophy'] }));
   localStorage.setItem('dragon.hi', '777'); localStorage.setItem('dragon.hi.2', '888'); localStorage.setItem('dragon.monster', 'mothra');
   localStorage.setItem('dragon.skin', 'shin'); localStorage.setItem('dragon.level', '1'); return true; })()`);
 await s.send('Page.reload', {});
@@ -83,6 +83,9 @@ const st = await s.evaluate(`JSON.stringify({ crystals: window.__game.progress.s
   monster: window.__game.monster.id, bests: window.__game.localBests, level: window.__game.levelIndex, skin: window.__game.skinIndex })`).then((j) => JSON.parse(j));
 check('old progress loads', st.crystals === 600, JSON.stringify(st));
 check('met goals unlock on load', st.unlocked.includes('ghidorah') && st.unlocked.includes('mothra'));
+check('trophies kept and earned on load', st.unlocked.includes('a:future-trophy') && st.unlocked.includes('a:m-ghidorah'), st.unlocked.join(','));
+const fut = await s.evaluate('window.__game.progress.stats.futureStat');
+check('unknown stats kept', fut === 7, String(fut));
 check('saved monster, level and bests restored', st.monster === 'mothra' && st.level === 1 && st.bests[0] === 777 && st.bests[1] === 888);
 
 // 7. crystal shop: buying costs the price once, needs the crystals, is saved, merged and synced to the

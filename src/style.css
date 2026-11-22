@@ -550,6 +550,7 @@ kbd {
   animation: fade-in 0.25s ease both;
 }
 .monsters-panel { width: min(560px, 100%); }
+#monsters .monsters-panel { max-height: min(640px, calc(100dvh - 32px)); } /* a fixed cap (not a percentage), so the list scrolls inside however long it gets */
 .mon-intro { margin: 0 0 12px; font-size: 12.5px; color: var(--ink-dim); }
 .mon-grid { display: grid; gap: 10px; overflow-y: auto; min-height: 0; padding-right: 4px; }
 .mon-card {
@@ -936,3 +937,17 @@ kbd {
 .reveal-actions .menu-btn { min-width: 120px; }
 @keyframes revealIn { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .reveal-card, .coach b { animation: none; } }
+
+/* trophies (monsters panel) */
+.tro-wrap { grid-column: 1 / -1; margin-top: 8px; }
+.tro-h { font: 700 12px/1 var(--ui); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-dim); margin: 6px 0 8px; }
+.tro-h .cnt { color: var(--gold, #ffd25a); margin-left: 6px; }
+.tro-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.tro { padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); font: 400 11.5px/1.3 var(--ui); opacity: 0.6; }
+.tro b { display: block; font-size: 12.5px; margin-bottom: 2px; }
+.tro span { color: var(--ink-dim); }
+.tro.got { opacity: 1; border-color: rgba(255, 210, 90, 0.55); background: rgba(255, 210, 90, 0.08); }
+.tro.got b::before { content: '\2605  '; color: var(--gold, #ffd25a); }
+.tro .bar { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); margin-top: 6px; overflow: hidden; }
+.tro .bar i { display: block; height: 100%; background: #2dffb0; }
+.over-next .tro-new { color: var(--gold, #ffd25a); font-weight: 700; margin-bottom: 4px; }

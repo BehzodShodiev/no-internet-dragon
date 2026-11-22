@@ -16,6 +16,7 @@ import { Crystals } from '../entities/Crystals.js';
 import { Gunship } from '../entities/Boss.js';
 import { Dreadnought } from '../entities/Dreadnought.js';
 import { SCRIPT, PROMPTS, COACH_SLOW, COACH_WAIT, ANSWERS, wantsBootcamp } from './Bootcamp.js';
+import { ACHIEVEMENTS, checkTrophies, grant, closestTrophy, trophyProgress } from './Achievements.js';
 import { SKINS } from '../entities/Skins.js';
 import { MONSTERS } from '../entities/Monsters.js';
 import { Progress } from './Progress.js';
@@ -128,6 +129,7 @@ export class Game {
     this.progress = new Progress();
     // a goal reached in a run that ended without a death (tab closed) unlocks now, before the saved pick is restored
     this.lateUnlocks = this.progress.check(MONSTERS);
+    checkTrophies(this.progress); // lifetime trophies already earned before trophies existed
     if (this.lateUnlocks.length) this.progress.save();
     const savedMonster = MONSTERS.find((m) => m.id === store.get('dragon.monster', 'rex')); // new players start as the Pixel Rex
     this.monster = savedMonster && this.progress.isUnlocked(savedMonster) ? savedMonster : MONSTERS[0];
@@ -245,6 +247,7 @@ export class Game {
     this.viewHintT = 8; // seconds into the run before the 3D hint (see _viewHint)
     this.score = 0;
     this.tally = { distance: 0, smash: 0, close: 0, crystal: 0, burn: 0, boss: 0 }; // where the score came from
+    this.feats = { returns: 0, reflectKill: false, parries: 0, dreadnoughts: 0, closeCalls: 0, breathsLoop1: 0 }; // for the one-run trophies
     this.dist = 0;
     this.chain = 0;
     this.mult = 1;
@@ -433,6 +436,7 @@ export class Game {
       this.hud.setSkin(this._skinIndexOf(m));
     }
     this.hud.renderMonsters(this.progress, m.id, this.board.isOwner);
+    this.hud.renderTrophies(this.progress, (t) => trophyProgress(this.progress, t));
   }
 
   /** Builds a monster's model (hidden) and keeps it for later picks. */
@@ -465,6 +469,7 @@ export class Game {
     if (this.state !== 'title' && this.state !== 'over') return;
     const want = force ?? !this.hud.isMonstersOpen();
     if (want) this.hud.renderMonsters(this.progress, this.monster.id, this.board.isOwner);
+    this.hud.renderTrophies(this.progress, (t) => trophyProgress(this.progress, t));
     if (want !== this.hud.isMonstersOpen()) this.audio.ui(want ? 'open' : 'close');
     this.hud.showMonsters(want);
   }
@@ -794,6 +799,7 @@ export class Game {
     inp.on('quality', () => this._cycleQuality());
     inp.on('monsters', () => this.toggleMonsters());
     this.hud.buildMonsters(MONSTERS, (id) => this.selectMonster(id), (id) => this.selectMonster(id, true));
+    this.hud.buildTrophies(ACHIEVEMENTS);
     inp.on('skin', () => {
       if (this.state === 'title' || this.state === 'over') this.selectSkin(this.monster.skins ? this._skinIndexOf(this.monster) + 1 : this.skinIndex + 1);
     });
@@ -935,6 +941,7 @@ export class Game {
 
   /** CRYSTAL BURST (the Kaiju): half a charge shatters everything close by, rocks and shells included. */
   _crystalBurst() {
+    if (this.stages.cycle === 0) this.feats.breathsLoop1++;
     this.charge -= 0.5;
     let n = 0;
     this.obstacles.inZone(-3, 0, 6, 4.5, (o) => {
@@ -1004,7 +1011,10 @@ export class Game {
       next = { name: m.name, text: m.goal.text, value: p.value, need: p.need };
       break;
     }
-    return { rows, next, instant: this.reducedMotion || !!this.sim };
+    const near = closestTrophy(this.progress);
+    const tp = near && trophyProgress(this.progress, near);
+    return { rows, next, instant: this.reducedMotion || !!this.sim, trophies: (this.newTrophies || []).map((a) => a.name),
+      near: near && !next ? { name: near.name, text: near.desc, value: tp.value, need: tp.need } : null };
   }
 
   // ------------------------------------------------------------------ Kaiju Bootcamp
@@ -1077,6 +1087,10 @@ export class Game {
     this.hud.setCombo(1, 0);
     this.hud.setRage(0, false, false);
     this.hud.banner('BOOTCAMP COMPLETE', `LEVEL ${this.level.id} · ${this.stages.current.title}`, 'clear');
+    if (grant(this.progress, 'bootcamp')) {
+      this.hud.toast('Trophy earned: Graduate', 2600);
+      if (!this.sim) { this.progress.save(); this.board.syncProgress(this.progress.toJSON()); }
+    }
     this.audio.music?.stinger('clear');
     this._monsterTip();
   }
@@ -1163,6 +1177,12 @@ export class Game {
     this.progress.add('runs');
     this.progress.max('bestScore', s);
     const unlocked = this.progress.check(MONSTERS);
+    const f = this.feats;
+    this.newTrophies = checkTrophies(this.progress, {
+      score: s, level: this.level.id, loops: this.stages.cycle, bestMult: this.bestMult, perfects: this.perfects,
+      returns: f.returns, reflectKill: f.reflectKill, parries: f.parries, dreadnoughts: f.dreadnoughts, closeCalls: f.closeCalls,
+      loopNoBreath: this.stages.cycle >= 1 && f.breathsLoop1 === 0,
+    }).filter((a) => !a.reward); // a monster's own trophy is announced by its reveal
     if (!this.sim) {
       this.progress.save();
       this.board.syncProgress(this.progress.toJSON());
@@ -1337,6 +1357,7 @@ export class Game {
       this.progress.check(MONSTERS);
       this.progress.save();
       this.hud.renderMonsters(this.progress, this.monster.id, b.isOwner);
+    this.hud.renderTrophies(this.progress, (t) => trophyProgress(this.progress, t));
     }
     // your best on each level is the higher of this browser's and the board's
     const bests = LEVELS.map((lv, i) => Math.max(this.localBests[i], b.myBest(lv.field)));
@@ -1395,6 +1416,7 @@ export class Game {
     }
     this.charge = 0;
     this.breathDur = BREATH_TIME[this.monster.trait] || CFG.breathTime;
+    if (this.stages.cycle === 0) this.feats.breathsLoop1++;
     this.breathT = this.breathDur;
     this.bossHitThisBreath = false;
     this.audio.breath(this.breathDur, this.monster.sound?.breath);
@@ -1508,6 +1530,7 @@ export class Game {
     this.rig.punch(1);
     this._haptic(30);
     this._popup('PARRY!', o.x, 4.4, 'close');
+    this.feats.parries++;
     this._setChain(this.chain + 2);
     for (let i = 0; i < 18; i++) this.sparks.emit(o.x - 1, 0.8 + Math.random() * 2.4, (Math.random() - 0.5), -3 - Math.random() * 5, Math.random() * 5, (Math.random() - 0.5) * 4, 0.3, 0.25, 0.05, 1.8, 1.3, 0.7, 1, 1.2, 12, 1);
     this._bossHit('parry');
@@ -1648,7 +1671,7 @@ export class Game {
       this.audio.closeCall();
       this._popup(`CLOSE! +${pts}`, 1, 3.4, 'close');
     }
-    if (clearance < CFG.closeCall) this.progress.add('closeCalls');
+    if (clearance < CFG.closeCall) { this.progress.add('closeCalls'); this.feats.closeCalls++; }
     this._setChain(c);
   }
 
@@ -1995,6 +2018,8 @@ export class Game {
     }
     this.bossesDowned++;
     this.progress.add('gunships');
+    if (source === 'reflect') this.feats.reflectKill = true;
+    if (boss.id === 'dreadnought') this.feats.dreadnoughts++;
     const pts = this._pts(CFG.bossPoints);
     this.score += pts;
     this.tally.boss += pts;
@@ -2025,6 +2050,7 @@ export class Game {
           o.dead = t.dead = true;
           this._explode(t, SMASH.tank * 2);
           this._popup('RETURN TO SENDER!', t.x, 3.2, 'close');
+          this.feats.returns++;
           break;
         }
       }

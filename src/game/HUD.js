@@ -235,14 +235,17 @@ export class HUD {
       return d;
     }));
     const nx = document.getElementById('over-next');
-    nx.classList.toggle('hidden', !extra.next);
-    if (extra.next) {
-      const n = extra.next;
+    const goal = extra.next || extra.near;
+    nx.classList.toggle('hidden', !goal && !extra.trophies?.length);
+    nx.replaceChildren();
+    if (extra.trophies?.length) nx.append(el('div', 'tro-new', `Trophy earned: ${extra.trophies.join(', ')}`));
+    if (goal) {
+      const n = goal;
       const bar = el('div', 'bar');
       const fill = el('i');
       fill.style.width = '0%';
       bar.append(fill);
-      nx.replaceChildren(el('span', '', `Next monster: ${n.name} · ${n.text} · ${n.value}/${n.need}`), bar);
+      nx.append(el('span', '', `${extra.next ? 'Next monster' : 'Closest trophy'}: ${n.name} · ${n.text} · ${n.value}/${n.need}`), bar);
       requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = `${Math.round((100 * n.value) / n.need)}%`; }));
     }
     this.show('over', true);
@@ -415,6 +418,40 @@ export class HUD {
       return { m, card, pic, goal, pick, preview };
     });
     $('mon-grid').replaceChildren(...this.monsterCards.map((c) => c.card));
+  }
+
+  /** The Trophies list, at the end of the monsters panel. */
+  buildTrophies(list) {
+    const wrap = el('div', 'tro-wrap');
+    const head = el('h3', 'tro-h', 'Trophies ');
+    this.troCount = el('span', 'cnt', '');
+    head.append(this.troCount);
+    const grid = el('div', 'tro-grid');
+    this.trophyCards = list.map((a) => {
+      const c = el('div', 'tro');
+      const bar = el('div', 'bar');
+      bar.append(el('i'));
+      c.append(el('b', '', a.name), el('span', '', a.desc), bar);
+      grid.append(c);
+      return { a, c, bar };
+    });
+    wrap.append(head, grid);
+    $('mon-grid').append(wrap);
+  }
+
+  /** Marks earned trophies; lifetime ones show their progress. prog(a): { value, need } or null. */
+  renderTrophies(progress, prog) {
+    if (!this.trophyCards) return;
+    let n = 0;
+    for (const t of this.trophyCards) {
+      const got = progress.unlocked.has(`a:${t.a.id}`);
+      if (got) n++;
+      t.c.classList.toggle('got', got);
+      const p = !got && prog(t.a);
+      t.bar.hidden = !p;
+      if (p) t.bar.firstChild.style.width = `${(100 * p.value) / p.need}%`;
+    }
+    this.troCount.textContent = `${n} / ${this.trophyCards.length}`;
   }
 
   /** Refreshes every card's lock state, goal progress and buttons. */
