@@ -20,6 +20,7 @@ export const ACHIEVEMENTS = [
   life('boss20', 'Boss Hunter', 'Down 20 bosses in total', 'gunships', 20),
   life('runs25', 'Regular', 'Play 25 runs', 'runs', 25),
   life('runs100', 'Veteran', 'Play 100 runs', 'runs', 100),
+  life('daily7', 'Daily Habit', 'Play the Daily Challenge on 7 days', 'dailies', 7),
   // one-run feats
   run('return', 'Return to Sender', 'Smash a tank shell back into its tank', (r) => r.returns > 0),
   run('reflectKill', 'Own Goal', 'Down a boss with one of its own missiles', (r) => r.reflectKill),

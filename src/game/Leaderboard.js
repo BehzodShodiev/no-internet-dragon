@@ -4,7 +4,17 @@
 // time the board renders. Outside claude.ai (dev server, offline build) the boards stay switched off.
 const TOP = 50;
 const MAX_SCORE = 999999;
-export const BOARD_FIELDS = ['best', 'l2', 'l3'];
+export const BOARD_FIELDS = ['best', 'l2', 'l3', 'daily'];
+// The Daily board stores day * DAY + score (day: days since 1970, UTC), so today's scores sort first and
+// older days read as 0. Your own 'daily' value is kept in that stored form (this.mine.daily).
+const DAY = 1e6;
+export const today = () => Math.floor(Date.now() / 864e5);
+/** A stored board value as a score (0 for another day's daily). */
+export function decode(field, v, day = today()) {
+  v = Number(v) || 0;
+  if (field !== 'daily') return Math.min(MAX_SCORE, Math.floor(v));
+  return Math.floor(v / DAY) === day ? Math.floor(v % DAY) : 0;
+}
 
 export class Leaderboard {
   constructor() {
@@ -60,13 +70,15 @@ export class Leaderboard {
         (snap) => {
           if (!snap.metadata.fromCache && ++answered >= 1) clearTimeout(slow);
           const rows = [];
+          let myRaw = 0;
           for (const d of snap.docs) {
-            const v = Number(d.data()?.[field]);
-            if (v > 0) rows.push({ id: d.id, best: Math.min(MAX_SCORE, Math.floor(v)) });
+            const raw = Number(d.data()?.[field]) || 0;
+            const v = decode(field, raw);
+            if (v > 0) rows.push({ id: d.id, best: v });
+            if (d.id === this.me) myRaw = raw;
           }
           this.boards[field] = rows;
-          const mine = rows.find((r) => r.id === this.me);
-          if (mine) this.mine[field] = Math.max(this.mine[field], mine.best);
+          if (myRaw > 0) this.mine[field] = Math.max(this.mine[field], field === 'daily' ? myRaw : decode(field, myRaw));
           this.status = 'ready';
           this._resolveAndEmit();
         },
@@ -135,7 +147,7 @@ export class Leaderboard {
   }
 
   myBest(field) {
-    return this.mine[field] || 0;
+    return field === 'daily' ? decode('daily', this.mine.daily) : this.mine[field] || 0;
   }
 
   name(id) {
@@ -186,7 +198,8 @@ export class Leaderboard {
       this._emit();
       return false;
     }
-    this.mine[field] = score;
+    // the daily is posted to the day the run started (meta.day), in its stored form
+    this.mine[field] = field === 'daily' ? (meta.day ?? today()) * DAY + score : score;
     this._emit();
     const write = async () => {
       const fields = { [field]: this.mine[field], at: Date.now(), view: meta.view, stage: meta.stage };

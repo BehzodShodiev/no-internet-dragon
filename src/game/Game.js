@@ -17,6 +17,7 @@ import { Gunship } from '../entities/Boss.js';
 import { Dreadnought } from '../entities/Dreadnought.js';
 import { SCRIPT, PROMPTS, COACH_SLOW, COACH_WAIT, ANSWERS, wantsBootcamp } from './Bootcamp.js';
 import { ACHIEVEMENTS, checkTrophies, grant, closestTrophy, trophyProgress } from './Achievements.js';
+import { dailyFor, dayId } from './Daily.js';
 import { SKINS } from '../entities/Skins.js';
 import { MONSTERS } from '../entities/Monsters.js';
 import { Progress } from './Progress.js';
@@ -236,7 +237,7 @@ export class Game {
 
   /** Per-run state shared by the first start and every restart. */
   _resetRun() {
-    this.seed = (this.seedBase + this.runCount++) >>> 0;
+    this.seed = this.daily ? this.daily.seed : (this.seedBase + this.runCount++) >>> 0;
     this.airJumps = 1; // the Hydra's WING FLAP
     this.diveT = 0; // Storm Wing's SONIC DIVE window
     this.breathDur = CFG.breathTime;
@@ -476,6 +477,9 @@ export class Game {
 
   /** Picks a level (on the title screen the world behind the menu changes with it). */
   selectLevel(index, instant = false) {
+    const wasDaily = this.daily;
+    this.daily = null;
+    if (wasDaily && this._dailyPrev && this._dailyPrev !== this.monster.id) this.selectMonster(this._dailyPrev);
     index = (index + LEVELS.length) % LEVELS.length;
     this.levelIndex = index;
     this.level = LEVELS[index];
@@ -494,6 +498,55 @@ export class Game {
       this._setupWorld(instant);
     }
     this._onBoard();
+  }
+
+  // ------------------------------------------------------------------ the Daily Challenge
+  /** Sets up a day's challenge (its level, featured monster and seed) without starting it. */
+  setDaily(day = dayId()) {
+    if (this.state !== 'title' && this.state !== 'over') return null;
+    if (!this.daily) this._dailyPrev = this.monster.id;
+    const d = (this.daily = dailyFor(day));
+    this.level = d.level;
+    this.stages.setLevel(d.level);
+    this.hud.boardField = 'daily';
+    if (this.obstacles) {
+      this.obstacles.reset();
+      this.crystals.clear();
+      this.debris.clear();
+      this.blasts?.clear();
+      this.supply?.clear();
+      this._setupWorld(true);
+    }
+    this.selectMonster(d.monster.id, true); // a locked featured monster is playable for the day
+    this.hi = this._dailyBest();
+    this.hud.setHi(this.hi);
+    this._onBoard();
+    return d;
+  }
+
+  /** Plays today's challenge (from the title or the game-over screen). */
+  startDaily() {
+    this.audio.init();
+    if (!this.setDaily()) return;
+    if (this.state === 'title') this._startIntro();
+    else { this.overT = 1; this._restart(); }
+  }
+
+  /** Your best today: this browser's and the board's. */
+  _dailyBest() {
+    const [day, score] = String(store.get('dragon.daily', '0:0')).split(':').map(Number);
+    return Math.max(day === dayId() ? score || 0 : 0, this.board.myBest('daily'));
+  }
+
+  /** The title's Daily card: today's level, monster and modifier, and your best today. */
+  _renderDaily() {
+    const d = dailyFor(dayId());
+    const $ = (id) => document.getElementById(id);
+    if (!$('daily-what')) return;
+    $('daily-what').textContent = `${d.base.name} · ${d.monster.name} · ${d.mod.name}`;
+    $('daily-mod').textContent = `${d.mod.desc}. Same seed for everyone, today only.`;
+    const best = this._dailyBest();
+    $('daily-best').textContent = best ? `BEST ${best.toLocaleString('en-US')}` : 'PLAY';
   }
 
   async init() {
@@ -822,6 +875,7 @@ export class Game {
       else document.exitFullscreen?.();
     });
     click('btn-start', () => this._onJump());
+    click('btn-daily', () => this.startDaily());
     click('btn-restart', () => this._onJump());
     click('btn-menu-over', () => this._toTitle());
     click('btn-resume', () => this.togglePause(false));
@@ -1144,8 +1198,10 @@ export class Game {
     this.timeScale = 1;
     this.lastRun = null;
     this.state = 'title';
+    if (this.daily) this.selectLevel(this.levelIndex, true);
     this.hud.setMenu(true);
     this.hud.show('title', true);
+    this._renderDaily();
     if (this.pendingPreset) this._autoPreset(this.pendingPreset);
     this._applyModels();
     this._onBoard();
@@ -1169,9 +1225,17 @@ export class Game {
     this.isBest = s > this.hi;
     if (this.isBest) {
       this.hi = s;
-      this.localBests[this.levelIndex] = Math.max(this.localBests[this.levelIndex], s);
-      if (!this.sim) store.set(this.level.id === 1 ? 'dragon.hi' : `dragon.hi.${this.level.id}`, String(this.localBests[this.levelIndex]));
+      if (this.daily) {
+        if (!this.sim) store.set('dragon.daily', `${this.daily.day}:${s}`);
+      } else {
+        this.localBests[this.levelIndex] = Math.max(this.localBests[this.levelIndex], s);
+        if (!this.sim) store.set(this.level.id === 1 ? 'dragon.hi' : `dragon.hi.${this.level.id}`, String(this.localBests[this.levelIndex]));
+      }
       this.hud.setHi(s);
+    }
+    if (this.daily && (this.progress.stats.lastDaily || 0) < this.daily.day) {
+      this.progress.add('dailies');
+      this.progress.max('lastDaily', this.daily.day);
     }
     const run = (this.lastRun = { score: s, posted: false, seed: this.seed });
     this.progress.add('runs');
@@ -1194,7 +1258,7 @@ export class Game {
       this.pendingReveal = this.sim ? null : m; // shown over the game-over screen
     }
     if (this.board.enabled && !this.sim) {
-      this.board.submit(this.level.field, s, { view: this.rig.mode, stage: this.stages.number }).then((ok) => {
+      this.board.submit(this.level.field, s, { view: this.rig.mode, stage: this.stages.number, day: this.daily?.day }).then((ok) => {
         run.posted = ok;
         if (this.board.saveError === 'readonly') this.hud.toast("Score not saved: you have view-only access. Ask the game's owner for Contributor access.", 4500);
         else if (this.board.saveError === 'network') this.hud.toast("Couldn't save your score. Check your connection.", 3500);
@@ -1361,7 +1425,11 @@ export class Game {
     }
     // your best on each level is the higher of this browser's and the board's
     const bests = LEVELS.map((lv, i) => Math.max(this.localBests[i], b.myBest(lv.field)));
-    if (bests[this.levelIndex] > this.hi && this.state !== 'running') {
+    this._renderDaily();
+    if (this.daily) {
+      const db = this._dailyBest();
+      if (db > this.hi && this.state !== 'running') { this.hi = db; this.hud.setHi(db); }
+    } else if (bests[this.levelIndex] > this.hi && this.state !== 'running') {
       this.hi = bests[this.levelIndex];
       this.hud.setHi(this.hi);
     }

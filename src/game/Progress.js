@@ -1,7 +1,7 @@
 // Lifetime stats, monster unlocks and crystal-shop purchases for this player. Kept in browser storage, and mirrored into the
 // player's leaderboard row (when they can write to it) so it follows them to other devices.
 const KEY = 'dragon.progress';
-export const STATS = ['runs', 'crystals', 'gunships', 'smashes', 'rages', 'closeCalls', 'bestScore'];
+export const STATS = ['runs', 'crystals', 'gunships', 'smashes', 'rages', 'closeCalls', 'bestScore', 'dailies', 'lastDaily'];
 
 export class Progress {
   constructor() {

@@ -25,7 +25,12 @@ const maxGame = Number(A.max || 1500);
 const bot = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'bot.js'), 'utf8');
 
 const jobs = [];
-for (const seed of seeds) for (const level of levels) for (const view of views) for (const monster of monsters) jobs.push({ level, view, monster, seed });
+// --daily N: the next N Daily Challenges (from today), each in 2D and 3D with its featured monster and modifier
+const dailyN = A.daily ? Number(A.daily) : 0;
+if (dailyN) {
+  const today = Math.floor(Date.now() / 864e5);
+  for (let k = 0; k < dailyN; k++) for (const view of views) jobs.push({ daily: today + k, view });
+} else for (const seed of seeds) for (const level of levels) for (const view of views) for (const monster of monsters) jobs.push({ level, view, monster, seed });
 
 const { url, close } = await serve(A.url);
 console.log(`matrix: ${jobs.length} runs (levels ${levels}, views ${views}, monsters ${monsters}, seeds ${seeds}), to loop ${loops}, sim x${sim}, ${workers} workers, ${url}`);
@@ -35,10 +40,17 @@ const t0 = Date.now();
 async function runJob(s, j) {
   const u = new URL(url);
   u.searchParams.set('sim', String(sim));
-  u.searchParams.set('seed', String(j.seed));
+  if (!j.daily) u.searchParams.set('seed', String(j.seed));
   await s.navigate(u.toString());
   if (!(await s.waitState('title', 90000))) return { ...j, error: 'no title' };
-  const setup = await s.evaluate(`(() => { const g = window.__game; g.selectLevel(${j.level - 1}, true);
+  if (j.daily) {
+    // the day decides level, monster and seed; the job takes them on so the run checks below hold
+    const d = await s.evaluate(`(() => { const g = window.__game; g.setDaily(${j.daily});
+      if (g.rig.mode !== '${j.view}') { g.rig.setMode('${j.view}'); g.rig.raw = g.rig.blend = '${j.view}' === '3d' ? 1 : 0; g.hud.setView('${j.view}'); }
+      return JSON.stringify({ level: g.level.id, monster: g.monster.id, seed: g.seedBase, mod: g.daily.mod.id }); })()`);
+    Object.assign(j, JSON.parse(d));
+  }
+  const setup = j.daily ? j.monster : await s.evaluate(`(() => { const g = window.__game; g.selectLevel(${j.level - 1}, true);
     if (g.rig.mode !== '${j.view}') { g.rig.setMode('${j.view}'); g.rig.raw = g.rig.blend = '${j.view}' === '3d' ? 1 : 0; g.hud.setView('${j.view}'); }
     g.selectMonster('${j.monster}', true); return g.monster.id + '/' + g.level.id + '/' + g.rig.mode; })()`);
   if (typeof setup !== 'string' || !setup.startsWith(j.monster)) return { ...j, error: 'setup ' + JSON.stringify(setup) };
@@ -77,7 +89,7 @@ await Promise.all(Array.from({ length: Math.min(workers, jobs.length) }, async (
       try { r = await runJob(s, j); } catch (e) { r = { ...j, error: String(e) }; }
     }
     results.push(r);
-    const tag = `L${j.level} ${j.view} ${j.monster.padEnd(8)} seed ${j.seed}`;
+    const tag = j.daily ? `day ${j.daily} ${j.mod} L${j.level} ${j.view} ${String(j.monster).padEnd(8)}` : `L${j.level} ${j.view} ${j.monster.padEnd(8)} seed ${j.seed}`;
     if (r.error) console.log(`ERROR ${tag}: ${r.error}`);
     else console.log(`${r.deaths ? 'FAIL ' : r.timedOut ? 'SLOW ' : 'pass '} ${tag}: ${r.deaths} deaths, loop ${r.loops}, ${r.gameTime}s game, score ${r.score}, ${r.gunships} gunships${r.glides ? `, ${r.glides} glides` : ''}`);
     if (r.deaths) for (const d of r.log) console.log('   death:', JSON.stringify(d));

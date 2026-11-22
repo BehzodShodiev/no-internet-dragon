@@ -35,7 +35,7 @@ export const ANSWERS = { jump: ['jump'], crystals: [], duck: ['duck'], under: []
  * panel), on the Desert, and never a test run.
  */
 export function wantsBootcamp(game, store) {
-  if (game.sim || game.debug || game.seedFixed || game.level.id !== 1) return false;
+  if (game.sim || game.debug || game.seedFixed || game.daily || game.level.id !== 1) return false;
   const flag = store.get('dragon.tutorial', '');
   return flag === 'again' || (flag !== 'done' && (game.progress.stats.runs || 0) === 0);
 }

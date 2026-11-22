@@ -951,3 +951,16 @@ kbd {
 .tro .bar { height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); margin-top: 6px; overflow: hidden; }
 .tro .bar i { display: block; height: 100%; background: #2dffb0; }
 .over-next .tro-new { color: var(--gold, #ffd25a); font-weight: 700; margin-bottom: 4px; }
+
+/* the Daily Challenge card (title) */
+.daily-card {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; width: 100%; margin: -6px 0 14px;
+  padding: 8px 12px; border-radius: 12px; border: 1px solid rgba(255, 210, 90, 0.45); background: rgba(255, 210, 90, 0.08);
+  color: inherit; text-align: left; cursor: pointer; touch-action: manipulation; font: inherit;
+}
+.daily-card:hover, .daily-card:focus-visible { background: rgba(255, 210, 90, 0.16); outline: none; }
+.dc-tag { font: 800 10px/1 var(--ui); letter-spacing: 0.16em; color: #1a1406; background: var(--gold, #ffd25a); padding: 4px 6px; border-radius: 6px; }
+.dc-body b { display: block; font: 700 13px/1.25 var(--ui); }
+.dc-body small { display: block; font: 400 11.5px/1.3 var(--ui); color: var(--ink-dim); }
+.dc-best { font: 700 12px/1 var(--ui); color: var(--gold, #ffd25a); white-space: nowrap; }
+@media (max-height: 520px) { .dc-body small { display: none; } .daily-card { margin-top: 0; } }

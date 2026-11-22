@@ -10,6 +10,10 @@
   const avatar = (id, i) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle cx="16" cy="16" r="16" fill="${colors[i % colors.length]}"/><text x="16" y="21" font-size="13" text-anchor="middle" fill="#fff" font-family="Arial">${people[id].split(' ').map(s => s[0]).join('')}</text></svg>`);
   const seed = { u_a: 1840, u_b: 1220, u_c: 760, u_d: 410, u_e: 230, u_f: 120, u_g: 60 };
   const docs = new Map(Object.entries(seed).map(([k, v], i) => ['scores/' + k, { best: v, l2: i % 2 ? v * 2 + 300 : 0, l3: i % 3 === 0 ? v * 3 : 0, at: 1 }]));
+  // daily: one colleague played today, one yesterday (only today's may show)
+  const day = Math.floor(Date.now() / 864e5);
+  docs.get('scores/u_a').daily = day * 1e6 + 4321;
+  docs.get('scores/u_b').daily = (day - 1) * 1e6 + 9999;
   if (q.get('mockmine')) docs.set('scores/u_me', { best: 500, l2: 0, l3: 900, at: 1, progress: { stats: { crystals: 42, runs: 3 }, unlocked: ['kaiju'] } });
   const failMode = q.get('mockfail') || '';
   let ownGets = 0;

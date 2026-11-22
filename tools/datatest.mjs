@@ -57,6 +57,21 @@ await sync();
 r = await row();
 check('new row created', r && r.l3 === 3333 && r.best === 0 && r.progress?.stats?.crystals === 1, JSON.stringify(r));
 
+// 3b. the Daily board: only today's scores show, and a daily post writes just its own field (encoded)
+await open({ mockmine: '1' });
+const daily = await s.evaluate(`JSON.stringify(window.__game.board.rows('daily'))`).then(JSON.parse);
+check('daily shows only today', daily.length === 1 && daily[0].id === 'u_a' && daily[0].best === 4321, JSON.stringify(daily));
+await s.evaluate('window.__mockWrites.length = 0');
+await submit('daily', 1500);
+await s.evaluate('window.__game.board._writing');
+r = await row();
+const w3 = await writes();
+const dday = Math.floor(Date.now() / 864e5);
+check('daily writes only its field, encoded', w3.length === 1 && w3[0].op === 'update' && w3[0].body.daily === dday * 1e6 + 1500 && !('best' in w3[0].body) && !('progress' in w3[0].body), JSON.stringify(w3));
+check('daily post keeps the other fields', r && r.best === 500 && r.l3 === 900 && r.progress?.stats?.crystals === 42, JSON.stringify(r));
+const mb = await s.evaluate("window.__game.board.myBest('daily')");
+check('daily best reads back', mb === 1500, String(mb));
+
 // 4. no row and reads fail: nothing is created blind, and the viewer isn't marked read-only
 await open({ mockfail: 'get' });
 const ok4 = await submit('l2', 4444);

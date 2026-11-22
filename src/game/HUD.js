@@ -342,6 +342,12 @@ export class HUD {
       b.addEventListener('click', (e) => { e.stopPropagation(); this.boardField = lv.field; this.onBoardTab?.(); });
       return b;
     });
+    const daily = el('button', '', 'Daily');
+    daily.type = 'button';
+    daily.setAttribute('role', 'tab');
+    daily.addEventListener('click', (e) => { e.stopPropagation(); this.boardField = 'daily'; this.onBoardTab?.(); });
+    this.tabButtons.push(daily);
+    this.tabFields = [...levels.map((lv) => lv.field), 'daily'];
     $('board-tabs').replaceChildren(...this.tabButtons);
     this.levels = levels;
   }
@@ -584,7 +590,7 @@ export class HUD {
     }
     const field = level.field;
     const tabField = this.boardField || field;
-    this.tabButtons?.forEach((b, i) => b.setAttribute('aria-selected', String(this.levels[i].field === tabField)));
+    this.tabButtons?.forEach((b, i) => b.setAttribute('aria-selected', String(this.tabFields[i] === tabField)));
     let status = '';
     if (board.status === 'loading') status = 'Loading the leaderboard…';
     else if (board.status === 'slow') status = "Can't reach the leaderboard yet.";
@@ -593,7 +599,7 @@ export class HUD {
     if (blocked) status = "Your scores aren't saved: your access to this game is view-only. Ask its owner for Contributor access.";
     document.querySelectorAll('.board-status').forEach((s) => {
       const empty = board.status === 'ready' && !board.rows(s.closest('#board') ? tabField : field).length;
-      s.textContent = status || (empty ? 'No scores on this level yet. Set the first one!' : '');
+      s.textContent = status || (empty ? ((s.closest('#board') ? tabField : field) === 'daily' ? 'No scores today yet. Set the first one!' : 'No scores on this level yet. Set the first one!') : '');
       s.classList.toggle('alert', blocked);
     });
 
